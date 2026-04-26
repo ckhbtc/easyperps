@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#050508"/>
+  <!-- Candlestick chart going up -->
+  <rect x="7" y="18" width="4" height="8" rx="1" fill="#00d4ff"/>
+  <rect x="8.5" y="14" width="1" height="4" fill="#00d4ff"/>
+  <rect x="8.5" y="26" width="1" height="3" fill="#00d4ff"/>
+  <rect x="14" y="10" width="4" height="10" rx="1" fill="#a855f7"/>
+  <rect x="15.5" y="6" width="1" height="4" fill="#a855f7"/>
+  <rect x="15.5" y="20" width="1" height="3" fill="#a855f7"/>
+  <rect x="21" y="5" width="4" height="14" rx="1" fill="#10f090"/>
+  <rect x="22.5" y="2" width="1" height="3" fill="#10f090"/>
+  <rect x="22.5" y="19" width="1" height="4" fill="#10f090"/>
+</svg>
