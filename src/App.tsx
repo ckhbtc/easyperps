@@ -7,7 +7,7 @@ import { getMarketPrice, getBalances, getPositions, resolveMarket, listMarkets }
 import type { PositionInfo, BalanceInfo, PerpMarket } from './injective'
 import { openTrade, closeTrade } from './tx'
 import { enableAutoSign, disableAutoSign } from './autosign'
-import { fetchBridgeQuote, executeBridge } from './bridge'
+import { fetchBridgeQuote, executeBridge, isValidBridgeAmount, MAX_BRIDGE_USDC } from './bridge'
 import type { BridgeEstimation } from './bridge'
 import './App.css'
 
@@ -238,8 +238,13 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
     setError('')
   }, [initialAmount])
 
+  const validAmount = isValidBridgeAmount(amount)
+
   async function handleQuote() {
-    if (!amount || parseFloat(amount) <= 0) return
+    if (!validAmount) {
+      setError(`Enter an amount between 0 and ${MAX_BRIDGE_USDC.toLocaleString()} USDC.`)
+      return
+    }
     setQuoting(true); setError(''); setQuote(null)
     try {
       const q = await fetchBridgeQuote(amount, recipientEvm)
@@ -252,7 +257,10 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
   }
 
   async function handleBridge() {
-    if (!amount || parseFloat(amount) <= 0) return
+    if (!validAmount) {
+      setError(`Enter an amount between 0 and ${MAX_BRIDGE_USDC.toLocaleString()} USDC.`)
+      return
+    }
     setBridging(true); setError(''); setStep('')
     try {
       const result = await executeBridge(amount, senderEvm, recipientEvm, msg => {
@@ -298,6 +306,7 @@ Order ID:   ${result.orderId}`)
               className="bridge-input"
               type="number"
               min="0"
+              max={MAX_BRIDGE_USDC}
               step="1"
               value={amount}
               onChange={e => { setAmount(e.target.value); setQuote(null) }}
@@ -346,14 +355,14 @@ Order ID:   ${result.orderId}`)
           <button
             className="btn-bridge-quote"
             onClick={handleQuote}
-            disabled={quoting || bridging || !amount}
+            disabled={quoting || bridging || !validAmount}
           >
             {quoting ? 'Quoting…' : 'Get Quote'}
           </button>
           <button
             className="btn-bridge-send"
             onClick={handleBridge}
-            disabled={bridging || !amount}
+            disabled={bridging || !validAmount}
           >
             {bridging ? '…' : 'Bridge →'}
           </button>
