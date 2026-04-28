@@ -40,6 +40,15 @@ interface RawQuote {
 
 // ─── Amount helpers ───────────────────────────────────────────────────────────
 
+// Hard cap on a single bridge so a fat-fingered "1000000" doesn't try to
+// approve a million USDC. This is a UX guard, not a chain-side limit.
+export const MAX_BRIDGE_USDC = 100_000
+
+export function isValidBridgeAmount(amount: string): boolean {
+  const n = parseFloat(amount)
+  return Number.isFinite(n) && n > 0 && n <= MAX_BRIDGE_USDC
+}
+
 export function amountToBaseUnits(human: string, decimals = 6): bigint {
   const amount = new Decimal(human)
   if (!amount.isFinite() || amount.lte(0)) throw new Error('Invalid amount')
