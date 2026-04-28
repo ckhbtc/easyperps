@@ -87,7 +87,7 @@ export function parse(input: string): ParseResult {
 
   // ─── Balance / Positions / Price shortcuts ───────────────────────────────
 
-  if (BALANCE_PATTERN.test(text) && !SIDE_PATTERNS.long.test(text) && !SIDE_PATTERNS.short.test(text)) {
+  if (BALANCE_PATTERN.test(text) && !BRIDGE_PATTERN.test(text) && !SIDE_PATTERNS.long.test(text) && !SIDE_PATTERNS.short.test(text)) {
     return { intent: { kind: 'balances' }, missing: [], summary: 'Show your wallet balances' }
   }
 

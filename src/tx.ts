@@ -203,7 +203,7 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
   const { txRaw } = createTransaction({
     message: msg,
     memo: `open ${side} ${market.symbol}`,
-    pubKey: acct.pubKey || ethereumPubkeyFromAddress(ethAddress),
+    pubKey: acct.pubKey || ethereumPubkeyPlaceholder(),
     sequence: acct.sequence,
     accountNumber: acct.accountNumber,
     chainId: chainInfo.chainId,
@@ -314,7 +314,7 @@ export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
   const { txRaw } = createTransaction({
     message: msg,
     memo: `close ${market.symbol}`,
-    pubKey: acct.pubKey || ethereumPubkeyFromAddress(ethAddress),
+    pubKey: acct.pubKey || ethereumPubkeyPlaceholder(),
     sequence: acct.sequence,
     accountNumber: acct.accountNumber,
     chainId: chainInfo.chainId,
@@ -351,7 +351,7 @@ function hexToBytes(hex: string): Uint8Array {
  * createTransaction accepts a base64-encoded compressed pubkey.
  * We use a placeholder here — the signature itself authenticates the sender.
  */
-function ethereumPubkeyFromAddress(_ethAddress: string): string {
+function ethereumPubkeyPlaceholder(): string {
   // For new accounts without on-chain pubkey, supply a minimal valid placeholder.
   // The Injective chain allows EIP-712 txs where the pub_key is recovered from the sig.
   // Using a 33-byte empty compressed pubkey encoded as base64.

@@ -7,6 +7,8 @@
  *   2. On execute: fetch full calldata, switch to Arbitrum, approve USDC, submit bridge tx.
  */
 
+import { Decimal } from 'decimal.js'
+
 const DEBRIDGE_API  = 'https://dln.debridge.finance/v1.0'
 const ARBITRUM_ID   = 42161
 const INJECTIVE_DLN = 100000029
@@ -38,14 +40,24 @@ interface RawQuote {
 
 // ─── Amount helpers ───────────────────────────────────────────────────────────
 
-function toBase(human: string, decimals = 6): bigint {
-  const f = parseFloat(human)
-  if (!isFinite(f) || f <= 0) throw new Error('Invalid amount')
-  return BigInt(Math.round(f * 10 ** decimals))
+export function amountToBaseUnits(human: string, decimals = 6): bigint {
+  const amount = new Decimal(human)
+  if (!amount.isFinite() || amount.lte(0)) throw new Error('Invalid amount')
+
+  const base = amount.mul(new Decimal(10).pow(decimals))
+  if (!base.isInteger()) {
+    throw new Error(`Amount supports up to ${decimals} decimal places`)
+  }
+  if (base.lte(0)) throw new Error('Invalid amount')
+
+  return BigInt(base.toFixed(0))
 }
 
-function fromBase(base: string, decimals = 6): string {
-  return (Number(base) / 10 ** decimals).toFixed(6).replace(/\.?0+$/, '')
+export function amountFromBaseUnits(base: string, decimals = 6): string {
+  return new Decimal(base)
+    .div(new Decimal(10).pow(decimals))
+    .toFixed(decimals)
+    .replace(/\.?0+$/, '')
 }
 
 // ─── ERC20 approve calldata ───────────────────────────────────────────────────
@@ -78,7 +90,7 @@ export async function fetchBridgeQuote(
   amount: string,
   recipientEvm: string,
 ): Promise<BridgeEstimation> {
-  const srcAmountBase = toBase(amount).toString()
+  const srcAmountBase = amountToBaseUnits(amount).toString()
   const raw = await callDln({
     srcChainId:                  ARBITRUM_ID.toString(),
     srcChainTokenIn:             BRIDGE_SRC_TOKEN,
@@ -94,7 +106,7 @@ export async function fetchBridgeQuote(
   return {
     srcAmount:     amount,
     srcAmountBase,
-    dstAmount:     fromBase(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
+    dstAmount:     amountFromBaseUnits(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
     dstAmountBase: est.dstChainTokenOut.amount,
     protocolFee:   raw.protocolFee ?? '0',
     fixFeeWei:     raw.fixFee ?? '1000000000000000',
@@ -194,7 +206,7 @@ export async function executeBridge(
   recipientEvm:    string,
   onProgress:      (msg: string) => void,
 ): Promise<BridgeResult> {
-  const srcAmountBase = toBase(amount).toString()
+  const srcAmountBase = amountToBaseUnits(amount).toString()
 
   // Remember the user's current chain so we can switch back after bridging.
   const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
@@ -221,7 +233,7 @@ export async function executeBridge(
   const estimation: BridgeEstimation = {
     srcAmount:     amount,
     srcAmountBase,
-    dstAmount:     fromBase(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
+    dstAmount:     amountFromBaseUnits(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
     dstAmountBase: est.dstChainTokenOut.amount,
     protocolFee:   raw.protocolFee ?? '0',
     fixFeeWei:     raw.fixFee ?? '1000000000000000',

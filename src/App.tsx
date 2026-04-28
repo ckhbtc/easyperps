@@ -63,6 +63,12 @@ function systemMsg(content: string): Message {
   return { id: uid(), role: 'system', content, ts: Date.now() }
 }
 
+function parsePositiveAmount(text: string): number {
+  const match = /^\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:usdc|usdt|usd|dollars?)?\s*$/i.exec(text)
+  const amount = match ? parseFloat(match[1]) : 0
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
 const WELCOME = agentMsg(
   'Welcome to EasyPerps.\n\nConnect MetaMask to get started, then tell me what you want to do.\n\nExamples:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Arbitrum to Injective"'
 )
@@ -225,6 +231,13 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
   const [step, setStep]           = useState<string>('')
   const [error, setError]         = useState<string>('')
 
+  useEffect(() => {
+    setAmount(initialAmount)
+    setQuote(null)
+    setStep('')
+    setError('')
+  }, [initialAmount])
+
   async function handleQuote() {
     if (!amount || parseFloat(amount) <= 0) return
     setQuoting(true); setError(''); setQuote(null)
@@ -367,6 +380,7 @@ export default function App() {
   const [autoSignBusy, setAutoSignBusy] = useState(false)
   const [yolo, setYolo] = useState(false)
   const [bridgeOpen, setBridgeOpen] = useState(false)
+  const [bridgeInitialAmount, setBridgeInitialAmount] = useState('10')
   const [messages, setMessages] = useState<Message[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -412,6 +426,11 @@ export default function App() {
   function handleClearHistory() {
     setMessages([WELCOME])
     setPendingClarification(null)
+  }
+
+  function openBridge(amount?: number) {
+    setBridgeInitialAmount(amount && amount > 0 ? String(amount) : '10')
+    setBridgeOpen(true)
   }
 
   async function handleAutoSign() {
@@ -520,6 +539,9 @@ export default function App() {
       if      (levOnly) base.leverage = parseFloat(levOnly[1])
       else if (numOnly) base.amount   = parseFloat(numOnly[1])
       if (tokOnly) base.symbol = tokenAliases[tokOnly[1].toLowerCase()] ?? tokOnly[1].toUpperCase()
+    } else if (base.kind === 'bridge') {
+      const amount = parsePositiveAmount(text)
+      if (amount > 0) base.amount = amount
     }
 
     const stillMissing: string[] = []
@@ -529,6 +551,8 @@ export default function App() {
       if (!base.leverage)             stillMissing.push('what leverage? (e.g. 5x)')
     } else if (base.kind === 'close') {
       if (!base.symbol) stillMissing.push('which market to close?')
+    } else if (base.kind === 'bridge') {
+      if (!base.amount) stillMissing.push('how much to bridge? (e.g. $10 or 50 USDC)')
     }
 
     if (stillMissing.length > 0) {
@@ -604,7 +628,7 @@ export default function App() {
       case 'trade': await handleTradeIntent(intent); break
       case 'close': await handleCloseIntent(intent); break
       case 'bridge': {
-        setBridgeOpen(true)
+        openBridge(intent.amount)
         break
       }
     }
@@ -842,7 +866,7 @@ export default function App() {
               )}
               <button
                 className="btn-bridge"
-                onClick={() => setBridgeOpen(true)}
+                onClick={() => openBridge()}
                 data-tooltip="Bridge funds from Arbitrum to Injective"
               >
                 🌉
@@ -909,6 +933,7 @@ export default function App() {
         <BridgeModal
           senderEvm={wallet.ethAddress}
           recipientEvm={wallet.ethAddress}
+          initialAmount={bridgeInitialAmount}
           onClose={() => setBridgeOpen(false)}
           onStatus={msg => setMessages(prev => [...prev, systemMsg(msg)])}
         />
