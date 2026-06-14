@@ -282,7 +282,7 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
         setStep(msg)
         onStatus(msg)
       })
-      onStatus(`🌉 Bridge submitted! USDT arriving on Injective shortly.
+      onStatus(`🌉 Bridge submitted! Native USDC arriving on Injective shortly.
 Approve tx: ${result.approveTxHash}
 Bridge tx:  ${result.bridgeTxHash}
 Order ID:   ${result.orderId}`)
@@ -337,7 +337,7 @@ Order ID:   ${result.orderId}`)
           <label className="bridge-label">To</label>
           <div className="bridge-chain-row">
             <span className="bridge-chain">Injective</span>
-            <span className="bridge-token">USDT</span>
+            <span className="bridge-token">USDC</span>
           </div>
         </div>
 
@@ -345,7 +345,7 @@ Order ID:   ${result.orderId}`)
           <div className="bridge-quote">
             <div className="bridge-quote-row">
               <span>You receive</span>
-              <span className="bridge-quote-val">{quote.dstAmount} USDT</span>
+              <span className="bridge-quote-val">{quote.dstAmount} USDC</span>
             </div>
             <div className="bridge-quote-row">
               <span>Protocol fee</span>
@@ -582,7 +582,7 @@ export default function App() {
     } else if (base.kind === 'trade') {
       // Unknown parse, try to extract a single bare clarification value:
       //   "5x" or "10x"  → leverage
-      //   "5" or "100"   → USDT amount
+      //   "5" or "100"   -> USDC amount
       //   "INJ" / "BTC"  → symbol
       const t = text.trim()
       const levOnly = /^(\d+(?:\.\d+)?)\s*[xX×]$/.exec(t)
@@ -704,12 +704,12 @@ export default function App() {
       notional = new Decimal(intent.qty.toString()).mul(new Decimal(price)).toDecimalPlaces(4)
     }
     if (!notional || notional.lte(0)) {
-      pushAgent(`Couldn't determine trade size, price unavailable. Try specifying a USDT amount, e.g. "$10 of ${intent.symbol}".`)
+      pushAgent(`Couldn't determine trade size, price unavailable. Try specifying a USDC amount, e.g. "$10 of ${intent.symbol}".`)
       return
     }
     const sizeDesc = intent.qty && !intent.amount
       ? `${intent.qty} ${intent.symbol} (~$${notional.toFixed()})`
-      : `$${notional.toFixed()} USDT`
+      : `$${notional.toFixed()} USDC`
     const leverage = new Decimal(intent.leverage.toString())
     const margin = notional.div(leverage).toDecimalPlaces(2).toFixed()
     const summary = [
@@ -718,7 +718,7 @@ export default function App() {
       'Route     : RFQ quote',
       `Notional  : ${sizeDesc}`,
       `Leverage  : ${intent.leverage}x`,
-      `Margin req: ~$${margin} USDT`,
+      `Margin req: ~$${margin} USDC`,
       `Spot price: $${price}`,
     ].join('\n')
 
@@ -760,7 +760,7 @@ export default function App() {
         ethAddress: wallet.ethAddress,
         market,
         side: trade.side,
-        notionalUsdt: Number(trade.amount),
+        notionalUsdc: Number(trade.amount),
         leverage: Number(trade.leverage),
         onProgress: replaceRfqStatus,
       })

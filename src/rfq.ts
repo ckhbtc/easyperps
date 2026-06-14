@@ -42,19 +42,19 @@ export function buildRfqOpenInput({
   market,
   oraclePrice,
   side,
-  marginUsdt,
+  marginUsdc,
   leverage,
   slippage,
 }: {
   market: RfqMarketMetadata
   oraclePrice: Decimal.Value
   side: 'long' | 'short'
-  marginUsdt: Decimal.Value
+  marginUsdc: Decimal.Value
   leverage: Decimal.Value
   slippage: Decimal.Value
 }): RfqOrderInput {
   const price = new Decimal(oraclePrice)
-  const margin = new Decimal(marginUsdt)
+  const margin = new Decimal(marginUsdc)
   const leverageDec = new Decimal(leverage)
   if (!price.isFinite() || price.lte(0)) throw new Error('Oracle price is unavailable')
   if (!margin.isFinite() || margin.lte(0)) throw new Error('Margin must be positive')

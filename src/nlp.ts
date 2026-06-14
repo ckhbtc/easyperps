@@ -9,7 +9,7 @@
  *   "what's my balance"
  *   "show positions"
  *   "price of BTC"
- *   "open a 100 USDT long on BTC at 10x leverage"
+ *   "open a 100 USDC long on BTC at 10x leverage"
  *
  * Returns a structured ParseResult or null if nothing was understood.
  */
@@ -118,7 +118,7 @@ export function parse(input: string): ParseResult {
     return {
       intent: { kind: 'bridge', amount },
       missing,
-      summary: amount > 0 ? `Bridge $${amount} USDC from Arbitrum → Injective USDT` : undefined,
+      summary: amount > 0 ? `Bridge $${amount} USDC from Arbitrum to Injective native USDC` : undefined,
     }
   }
 
@@ -152,15 +152,15 @@ export function parse(input: string): ParseResult {
   const tokenMatch = TOKEN_IN_TEXT_PATTERN.exec(text)
   const symbol = tokenMatch ? normalizeToken(tokenMatch[1]) : ''
 
-  // Extract USDT notional — explicit dollar amount
+  // Extract USDC notional, or a generic dollar amount.
   const amountMatch = AMOUNT_PATTERN.exec(text)
   const amountStr = amountMatch?.[1] ?? amountMatch?.[2] ?? amountMatch?.[3] ?? ''
-  const usdtAmount = amountStr ? parseFloat(amountStr) : 0
+  const usdcAmount = amountStr ? parseFloat(amountStr) : 0
 
   // Extract token quantity — bare number adjacent to token name
   // e.g. "long 1 INJ" → qty=1, "1 inj long" → qty=1
   let tokenQty = 0
-  if (!usdtAmount) {
+  if (!usdcAmount) {
     const qtyBeforeToken = /\b(\d+(?:\.\d+)?)\s+(?:btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)\b/i
     const qtyAfterSide = /\b(?:long|short|buy|sell)\s+(\d+(?:\.\d+)?)\b/i
     const qbtMatch = qtyBeforeToken.exec(text)
@@ -176,21 +176,21 @@ export function parse(input: string): ParseResult {
 
   const missing: string[] = []
   if (!symbol) missing.push('which token? (e.g. INJ, BTC, ETH)')
-  if (!usdtAmount && !tokenQty) missing.push('how much? (e.g. $50 or 10 INJ)')
+  if (!usdcAmount && !tokenQty) missing.push('how much? (e.g. $50 or 10 INJ)')
   if (!leverage) missing.push('what leverage? (e.g. 5x)')
 
-  const sizeDesc = usdtAmount ? `$${usdtAmount}` : `${tokenQty} ${symbol}`
+  const sizeDesc = usdcAmount ? `$${usdcAmount}` : `${tokenQty} ${symbol}`
   if (missing.length > 0) {
     return {
-      intent: { kind: 'trade', side, symbol, amount: usdtAmount, qty: tokenQty, leverage },
+      intent: { kind: 'trade', side, symbol, amount: usdcAmount, qty: tokenQty, leverage },
       missing,
     }
   }
 
   return {
-    intent: { kind: 'trade', side, symbol, amount: usdtAmount, qty: tokenQty, leverage },
+    intent: { kind: 'trade', side, symbol, amount: usdcAmount, qty: tokenQty, leverage },
     missing: [],
-    summary: `Open a ${side} position on ${symbol} — ${sizeDesc} at ${leverage}x leverage`,
+    summary: `Open a ${side} position on ${symbol}, ${sizeDesc} at ${leverage}x leverage`,
   }
 }
 

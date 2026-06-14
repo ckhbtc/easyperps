@@ -19,7 +19,7 @@ describe('RFQ math', () => {
       market,
       oraclePrice: '100',
       side: 'long',
-      marginUsdt: '10',
+      marginUsdc: '10',
       leverage: '5',
       slippage: '0.01',
     })

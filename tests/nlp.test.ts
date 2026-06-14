@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import { parse } from '../src/nlp.js'
 
 describe('parse', () => {
-  it('parses a USDT notional trade', () => {
+  it('parses a USDC notional trade', () => {
     const result = parse('long $50 INJ at 5x')
 
     assert.equal(result.intent.kind, 'trade')
@@ -45,6 +45,7 @@ describe('parse', () => {
     if (result.intent.kind !== 'bridge') assert.fail('expected bridge intent')
     assert.equal(result.intent.amount, 100.5)
     assert.deepEqual(result.missing, [])
+    assert.equal(result.summary, 'Bridge $100.5 USDC from Arbitrum to Injective native USDC')
   })
 
   it('asks for a bridge amount when missing', () => {

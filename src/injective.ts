@@ -11,7 +11,7 @@ import {
   IndexerGrpcAccountPortfolioApi,
 } from '@injectivelabs/sdk-ts'
 import { getNetworkEndpoints, Network } from '@injectivelabs/networks'
-import Decimal from 'decimal.js'
+import { Decimal } from 'decimal.js'
 
 const NETWORK = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
@@ -20,12 +20,14 @@ const derivativesApi = new IndexerGrpcDerivativesApi(endpoints.indexer)
 const oracleApi = new IndexerGrpcOracleApi(endpoints.indexer)
 const portfolioApi = new IndexerGrpcAccountPortfolioApi(endpoints.indexer)
 
-const USDT_DECIMALS = 6
+export const QUOTE_DECIMALS = 6
 const INJ_DECIMALS  = 18
+export const NATIVE_USDC_EVM_ADDRESS = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a'
+export const NATIVE_USDC_DENOM = `erc20:${NATIVE_USDC_EVM_ADDRESS.toLowerCase()}`
 
 // ─── Token registry ───────────────────────────────────────────────────────────
-// Maps lower-cased Ethereum contract address → { symbol, decimals }
-// for tokens bridged via Injective's Peggy bridge (denom = "peggy0x<addr>").
+// Maps lower-cased Ethereum contract address to { symbol, decimals } for
+// tokens bridged via Injective's Peggy bridge (denom = "peggy0x<addr>").
 
 const PEGGY_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
   // USDT (Tether)
@@ -48,6 +50,13 @@ const PEGGY_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
   '0x93581991f68dbae1ea105233b67f7fa0d6bdee7b': { symbol: 'EVMOS', decimals: 18 },
 }
 
+const ERC20_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
+  // Native Injective USDC (bank denom = erc20:0xa00c59f...)
+  [NATIVE_USDC_EVM_ADDRESS.toLowerCase()]: { symbol: 'USDC', decimals: 6 },
+  // Injective EVM USDT, kept resolvable for existing wallet balances.
+  '0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13': { symbol: 'USDT', decimals: 6 },
+}
+
 /**
  * Resolve a Peggy denom (e.g. "peggy0xdAC17F9...") to symbol + decimals.
  * Returns null for unknown tokens.
@@ -62,13 +71,32 @@ function resolvePeggyToken(denom: string): { symbol: string; decimals: number } 
  * Resolve a bank/subaccount denom to { symbol, decimals }.
  * Returns null when we can't identify the token (so it can be skipped or shown raw).
  */
-function resolveDenom(denom: string): { symbol: string; decimals: number } | null {
+export function resolveDenom(denom: string): { symbol: string; decimals: number } | null {
   if (denom === 'inj') return { symbol: 'INJ', decimals: INJ_DECIMALS }
   if (denom.startsWith('peggy')) return resolvePeggyToken(denom)
+  if (denom.startsWith('erc20:0x') || denom.startsWith('erc20:0X')) {
+    const addr = denom.slice('erc20:'.length).toLowerCase()
+    return ERC20_REGISTRY[addr] ?? null
+  }
   // IBC tokens: show as "IBC" — decimals vary too much to guess safely, skip.
   if (denom.startsWith('ibc/')) return null
-  // Factory / ERC20 tokens: skip unknown ones to avoid garbage values.
+  // Factory / unknown tokens: skip unknown ones to avoid garbage values.
   return null
+}
+
+export function isUsdcPerpMarket(market: Record<string, unknown>, ticker: string): boolean {
+  const tickerUpper = ticker.toUpperCase()
+  const quoteToken = market['quoteToken'] as Record<string, unknown> | undefined
+  const quoteSymbol = String(quoteToken?.symbol ?? '').toUpperCase()
+  const quoteDenom = String(market['quoteDenom'] ?? quoteToken?.denom ?? '').toLowerCase()
+  const oracleQuote = String(market['oracleQuote'] ?? '').toUpperCase()
+
+  return (
+    quoteSymbol === 'USDC' ||
+    quoteDenom === NATIVE_USDC_DENOM ||
+    tickerUpper.includes('/USDC') ||
+    oracleQuote === 'USDC'
+  )
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -77,6 +105,7 @@ export interface PerpMarket {
   symbol: string
   ticker: string
   marketId: string
+  quoteDenom: string
   minPriceTickSize: string
   minQuantityTickSize: string
   initialMarginRatio: string
@@ -135,7 +164,9 @@ export async function listMarkets(): Promise<PerpMarket[]> {
     if (!isPerpetual) continue
 
     const ticker = String(any['ticker'] ?? '')
-    // Derive human-readable symbol from ticker "BTC/USDT PERP" → "BTC"
+    if (!isUsdcPerpMarket(any, ticker)) continue
+
+    // Derive human-readable symbol from ticker "BTC/USDC PERP" to "BTC"
     const symbolFromTicker = ticker.split('/')[0] ?? ''
     const oracleBase = String(any['oracleBase'] ?? symbolFromTicker)
 
@@ -143,13 +174,14 @@ export async function listMarkets(): Promise<PerpMarket[]> {
       symbol: symbolFromTicker || oracleBase,
       ticker,
       marketId: String(any['marketId'] ?? ''),
+      quoteDenom: String(any['quoteDenom'] ?? ''),
       minPriceTickSize: String(any['minPriceTickSize'] ?? '0.001'),
       minQuantityTickSize: String(any['minQuantityTickSize'] ?? '0.001'),
       initialMarginRatio: String(any['initialMarginRatio'] ?? '0.05'),
       maintenanceMarginRatio: String(any['maintenanceMarginRatio'] ?? '0.02'),
       takerFeeRate: String(any['takerFeeRate'] ?? '0.001'),
       oracleBase,
-      oracleQuote: String(any['oracleQuote'] ?? 'USDT'),
+      oracleQuote: String(any['oracleQuote'] ?? 'USDC'),
       oracleType: String(any['oracleType'] ?? 'bandibc'),
     })
   }
@@ -233,8 +265,9 @@ export async function getPositions(injAddress: string): Promise<PositionInfo[]> 
     // p.direction is TradeDirection ('long' | 'short')
     const side = p.direction === 'long' ? 'long' : 'short'
 
-    // Indexer returns prices in chain units for derivative markets (scaled by 10^6 for USDT quote)
-    const SCALE = new Decimal(10).pow(USDT_DECIMALS)
+    // Indexer returns prices in chain units for derivative markets, scaled by
+    // the quote token decimals.
+    const SCALE = new Decimal(10).pow(QUOTE_DECIMALS)
     const entryPrice = new Decimal(p.entryPrice).div(SCALE)
     const markPrice = new Decimal(p.markPrice ?? p.entryPrice).div(SCALE)
     const quantity = new Decimal(p.quantity)

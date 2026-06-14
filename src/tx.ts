@@ -49,7 +49,7 @@ export interface OpenTradeParams {
   ethAddress: string
   market: PerpMarket
   side: 'long' | 'short'
-  notionalUsdt: number
+  notionalUsdc: number
   leverage: number
   slippage?: number
   onProgress?: (msg: string) => void
@@ -63,10 +63,10 @@ export interface TxResult {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
-  const { injAddress, market, side, notionalUsdt, leverage, slippage = 0.01, onProgress } = params
+  const { injAddress, market, side, notionalUsdc, leverage, slippage = 0.01, onProgress } = params
   const session = requireRfqSession(injAddress)
   const oraclePrice = await getOraclePrice(market)
-  const notional = new Decimal(notionalUsdt.toString())
+  const notional = new Decimal(notionalUsdc.toString())
   const leverageDec = new Decimal(leverage.toString())
   if (!notional.isFinite() || notional.lte(0)) throw new Error('Trade notional must be positive')
   if (!leverageDec.isFinite() || leverageDec.lte(0)) throw new Error('Leverage must be positive')
@@ -75,7 +75,7 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     market,
     oraclePrice,
     side,
-    marginUsdt: notional.div(leverageDec),
+    marginUsdc: notional.div(leverageDec),
     leverage: leverageDec,
     slippage: new Decimal(slippage.toString()),
   })
