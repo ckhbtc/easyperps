@@ -2392,3 +2392,1208 @@
   line-height: 1.6;
 }
 [data-theme="rave"] .bridge-note { font-family: 'Fredoka One', cursive; font-size: 11px; font-weight: 400; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DEALER FEVER DREAM OVERHAUL
+   Direction C from the EasyPerps Auto Mall handoff.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes dealer-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes dealer-bounce {
+  0%, 100% { transform: scale(1) rotate(-6deg); }
+  50% { transform: scale(1.1) rotate(-6deg); }
+}
+
+@keyframes dealer-bounce2 {
+  0%, 100% { transform: scale(1) rotate(9deg); }
+  50% { transform: scale(1.12) rotate(9deg); }
+}
+
+@keyframes dealer-blink {
+  0%, 48% { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
+
+@keyframes dealer-fadein {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dealer-stamp {
+  0% { transform: scale(4) rotate(-15deg); opacity: 0; }
+  65% { transform: scale(0.88) rotate(-17deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-15deg); opacity: 1; }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 6px 20px rgba(255, 230, 0, 0.42), inset 0 2px 0 rgba(255, 255, 255, 0.5); }
+  50% { box-shadow: 0 6px 34px rgba(255, 230, 0, 0.82), 0 0 52px rgba(255, 31, 31, 0.2), inset 0 2px 0 rgba(255, 255, 255, 0.5); }
+}
+
+.dealer-mode {
+  width: min(100%, 1440px);
+  max-width: 1440px;
+  min-height: 100dvh;
+  height: 100dvh;
+  margin: 0 auto;
+  background: var(--cream);
+  border-left: 4px solid var(--orange);
+  border-right: 4px solid var(--orange);
+  box-shadow: 0 16px 48px rgba(255, 138, 0, 0.35);
+  overflow: hidden;
+}
+
+.dealer-mode::before {
+  display: none;
+}
+
+.dealer-ticker {
+  height: 28px;
+  overflow: hidden;
+  background: linear-gradient(90deg, #ff1f1f, #ff8a00, #ffe600, #39ff14, #00d9ff, #1857ff, #ff2bbf, #ff1f1f);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dealer-ticker-track {
+  display: flex;
+  width: max-content;
+  white-space: nowrap;
+  animation: dealer-marquee 7s linear infinite;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #ffffff;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.dealer-ticker-track span {
+  padding-right: 28px;
+}
+
+.dealer-ticker-track span::before {
+  content: '🔥';
+  margin-right: 10px;
+}
+
+.rainbow-stripe {
+  height: 5px;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    #ff1f1f 0,
+    #ff1f1f 14px,
+    #ff8a00 14px,
+    #ff8a00 28px,
+    #ffe600 28px,
+    #ffe600 42px,
+    #39ff14 42px,
+    #39ff14 56px,
+    #00d9ff 56px,
+    #00d9ff 70px,
+    #ff2bbf 70px,
+    #ff2bbf 84px
+  );
+}
+
+.dealer-mode .header {
+  min-height: 68px;
+  padding: 0 20px;
+  border-bottom: 4px solid #080812;
+  background: linear-gradient(135deg, #ff1f1f 0%, #ff8a00 30%, #ffe600 55%, #39ff14 80%, #00d9ff 100%);
+  gap: 14px;
+}
+
+.dealer-mode .header::before {
+  display: none;
+}
+
+.dealer-mode .header-left,
+.dealer-mode .header-right,
+.dealer-mode .wallet-area {
+  min-width: 0;
+}
+
+.dealer-mode .logo {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.7vw, 30px);
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: 2px;
+  background: none;
+  -webkit-text-fill-color: #ffffff;
+  text-shadow: -2px -2px 0 #000000, 2px -2px 0 #000000, -2px 2px 0 #000000, 2px 2px 0 #000000;
+  transform: rotate(-1deg);
+}
+
+.dealer-mode .logo span {
+  color: var(--yellow);
+  -webkit-text-fill-color: var(--yellow);
+}
+
+.dealer-mode .network-badge,
+.dealer-mode .powered-by,
+.dealer-mode .wallet-address,
+.dealer-mode .btn-clear,
+.dealer-mode .btn-autosign,
+.dealer-mode .btn-yolo,
+.dealer-mode .btn-bridge,
+.dealer-mode .btn-disconnect {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.dealer-mode .network-badge {
+  background: #080812;
+  color: var(--yellow);
+  border: 2px solid var(--yellow);
+  padding: 3px 8px;
+  animation: dealer-blink 2.2s step-end infinite;
+}
+
+.dealer-mode .network-badge::before {
+  content: none;
+}
+
+.dealer-mode .powered-by {
+  color: rgba(8, 8, 18, 0.7);
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(8, 8, 18, 0.18);
+  padding: 4px 9px;
+}
+
+.dealer-mode .btn-clear,
+.dealer-mode .btn-autosign,
+.dealer-mode .btn-yolo,
+.dealer-mode .btn-bridge,
+.dealer-mode .btn-disconnect,
+.dealer-mode .btn-connect {
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.dealer-mode .btn-clear:hover,
+.dealer-mode .btn-autosign:hover:not(:disabled),
+.dealer-mode .btn-yolo:hover,
+.dealer-mode .btn-bridge:hover,
+.dealer-mode .btn-disconnect:hover,
+.dealer-mode .btn-connect:hover:not(:disabled) {
+  transform: translateY(-1px) rotate(-1deg);
+  opacity: 1;
+  filter: saturate(1.18);
+}
+
+.dealer-mode .btn-clear {
+  color: #080812;
+  background: rgba(255, 255, 255, 0.42);
+  border: 2px solid #080812;
+  padding: 6px 10px;
+}
+
+.dealer-mode .wallet-address {
+  max-width: 180px;
+  color: #ffffff;
+  background: #080812;
+  border: 2px solid #ffffff;
+  padding: 6px 10px;
+}
+
+.dealer-mode .wallet-dot {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
+}
+
+.dealer-mode .btn-autosign {
+  color: #080812;
+  background: var(--green);
+  border: 2px solid #080812;
+  padding: 6px 10px;
+  transform: rotate(-2deg);
+}
+
+.dealer-mode .btn-autosign.active {
+  color: #080812;
+  background: var(--green);
+  border-color: #080812;
+  animation: none;
+}
+
+.dealer-mode .btn-yolo {
+  color: #ffffff;
+  background: var(--violet);
+  border: 2px solid #ffffff;
+  padding: 6px 10px;
+  transform: rotate(2deg);
+}
+
+.dealer-mode .btn-yolo.active {
+  color: #ffffff;
+  background: var(--violet);
+  border-color: #ffffff;
+  animation: dealer-bounce2 2.8s ease-in-out infinite;
+}
+
+.dealer-mode .btn-bridge {
+  color: #ffffff;
+  background: var(--blue);
+  border: 2px solid var(--yellow);
+  padding: 6px 12px;
+}
+
+.dealer-mode .btn-disconnect {
+  color: var(--yellow);
+  background: #080812;
+  border: 2px solid var(--yellow);
+  padding: 6px 12px;
+}
+
+.dealer-mode .btn-connect {
+  min-width: 170px;
+  color: #080812;
+  background: linear-gradient(180deg, #ffe600, #ffb300);
+  border: 3px solid #ffffff;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 1px;
+  animation: pulse-gold 2.5s ease-in-out infinite;
+}
+
+.landing-screen {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 52px 32px 68px;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 230, 0, 0.045) 0 12px, transparent 12px 24px),
+    #080812;
+  overflow: auto;
+}
+
+.landing-card {
+  width: min(100%, 580px);
+  position: relative;
+  text-align: center;
+  background: var(--cream);
+  border: 6px solid var(--red);
+  border-radius: 16px;
+  padding: 46px 38px 36px;
+  box-shadow: 0 0 0 3px var(--yellow), 0 24px 64px rgba(255, 31, 31, 0.45);
+  animation: dealer-fadein 0.28s ease;
+}
+
+.landing-eyebrow {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #777067;
+}
+
+.landing-card h1 {
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-size: clamp(48px, 10vw, 66px);
+  line-height: 0.95;
+  letter-spacing: 1px;
+  color: #080812;
+  text-wrap: balance;
+}
+
+.landing-subtitle {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 6vw, 36px);
+  letter-spacing: 4px;
+  color: var(--red);
+  line-height: 1;
+}
+
+.landing-copy {
+  max-width: 42rem;
+  margin: 22px auto 24px;
+  color: #555047;
+  font-family: var(--font-body);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.landing-connect {
+  width: 100%;
+  min-height: 58px;
+  font-size: 22px !important;
+  border-width: 4px !important;
+}
+
+.landing-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.landing-badges span {
+  color: var(--yellow);
+  background: #080812;
+  border: 1px solid var(--red);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.sticker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  padding: 8px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  line-height: 1.05;
+  text-align: center;
+  z-index: 2;
+}
+
+.sticker-red {
+  top: -18px;
+  left: -18px;
+  color: #ffffff;
+  background: var(--red);
+  animation: dealer-bounce 3.1s ease-in-out infinite;
+}
+
+.sticker-yellow {
+  top: -24px;
+  right: -22px;
+  color: #080812;
+  background: var(--yellow);
+  border-color: #080812;
+  animation: dealer-bounce2 2.8s ease-in-out infinite;
+}
+
+.sticker-blue {
+  right: -20px;
+  bottom: -20px;
+  width: 66px;
+  height: 66px;
+  color: #ffffff;
+  background: var(--blue);
+  animation: dealer-bounce 3.4s ease-in-out infinite;
+}
+
+.dealer-workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  background: #ffffff;
+}
+
+.chat-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: #ffffff;
+  border-right: 4px solid var(--orange);
+}
+
+.chat-strip {
+  flex-shrink: 0;
+  background: linear-gradient(90deg, var(--orange), var(--green));
+  padding: 5px 12px;
+  color: #080812;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.chat-sticker {
+  position: absolute;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  padding: 6px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 8px;
+  line-height: 1.05;
+  pointer-events: none;
+}
+
+.chat-sticker-rfq {
+  top: 76px;
+  color: #ffffff;
+  background: var(--violet);
+  border: 2px solid #ffffff;
+  animation: dealer-bounce2 2.3s ease-in-out infinite;
+}
+
+.chat-sticker-backend {
+  bottom: 132px;
+  color: #080812;
+  background: var(--cyan);
+  border: 2px solid #080812;
+  animation: dealer-bounce 3s ease-in-out infinite;
+}
+
+.dealer-mode .chat {
+  min-height: 0;
+  padding: 18px 24px 20px;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.dealer-mode .msg {
+  animation: dealer-fadein 0.22s ease;
+}
+
+.dealer-mode .msg-icon {
+  width: auto;
+  min-width: 42px;
+  margin-top: 0;
+  padding: 4px 7px;
+  align-self: flex-start;
+  color: #080812;
+  background: var(--yellow);
+  border: 2px solid var(--orange);
+  border-radius: 3px;
+  opacity: 1;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .msg-body {
+  max-width: min(92%, 660px);
+}
+
+.dealer-mode .msg-text {
+  color: #33302a;
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.42;
+  background: var(--parchment);
+  border: 3px solid var(--orange);
+  border-radius: 4px;
+  overflow: hidden;
+  padding: 0 14px 13px;
+}
+
+.dealer-mode .msg-agent .msg-text::before {
+  content: 'EASYPERPS AGENT - AUTO MALL MODE';
+  display: block;
+  margin: 0 -14px 12px;
+  padding: 5px 10px;
+  color: #080812;
+  background: linear-gradient(90deg, var(--orange), var(--green));
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .msg-user {
+  flex-direction: row-reverse;
+}
+
+.dealer-mode .msg-user .msg-body {
+  align-items: flex-end;
+}
+
+.dealer-mode .msg-user .msg-text {
+  max-width: min(72%, 520px);
+  color: #080812;
+  background: var(--green);
+  border: 3px solid #080812;
+  border-radius: 8px 8px 2px 8px;
+  padding: 9px 13px;
+  text-transform: uppercase;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.dealer-mode .msg-system {
+  justify-content: center;
+}
+
+.dealer-mode .msg-system .msg-text {
+  color: #080812;
+  background: var(--yellow);
+  border: 2px solid var(--orange);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.dealer-mode .typing {
+  width: fit-content;
+  background: #080812;
+  border: 3px solid var(--cyan);
+  border-radius: 6px;
+  padding: 11px 14px;
+  box-shadow: 0 0 28px rgba(0, 217, 255, 0.2);
+}
+
+.dealer-mode .typing span {
+  width: 7px;
+  height: 7px;
+  background: var(--cyan);
+  box-shadow: 0 0 8px rgba(0, 217, 255, 0.8);
+}
+
+.dealer-mode .typing span:nth-child(2) { background: var(--yellow); }
+.dealer-mode .typing span:nth-child(3) { background: var(--green); }
+
+.dealer-mode .input-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: #080812;
+  border-top: 0;
+}
+
+.dealer-mode .input-bar::after {
+  display: none;
+}
+
+.quick-strip {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.quick-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-strip button {
+  flex: 0 0 auto;
+  color: var(--yellow);
+  background: rgba(255, 230, 0, 0.08);
+  border: 1px solid rgba(255, 230, 0, 0.38);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.quick-strip button:hover {
+  background: rgba(255, 230, 0, 0.16);
+  transform: translateY(-1px);
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.dealer-mode .chat-input {
+  min-height: 45px;
+  color: #ffffff;
+  background: #1a1a1a;
+  border: 3px solid var(--green);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.dealer-mode .chat-input::placeholder {
+  color: #888888;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.dealer-mode .chat-input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 2px rgba(255, 230, 0, 0.18);
+}
+
+.dealer-mode .btn-send {
+  min-width: 72px;
+  min-height: 45px;
+  color: #080812;
+  background: linear-gradient(180deg, #39ff14, #1aaa00);
+  border: 2px solid #080812;
+  border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .btn-send:hover:not(:disabled) {
+  color: #080812;
+  background: linear-gradient(180deg, #ffe600, #ffb300);
+  border-color: #080812;
+  box-shadow: none;
+}
+
+.dealer-rail {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--parchment);
+  border-left: 0;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rail-panel {
+  background: #ffffff;
+  border: 2px solid var(--orange);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.rail-panel h2 {
+  margin-bottom: 10px;
+  color: var(--orange);
+  border-bottom: 2px solid var(--orange);
+  padding-bottom: 5px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.wallet-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 2px solid var(--cyan);
+  border-radius: 4px;
+  padding: 9px;
+}
+
+.wallet-ticket span,
+.status-grid span,
+.rail-panel p {
+  color: #7f7662;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.wallet-ticket strong {
+  color: var(--cyan);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px 10px;
+  margin-top: 12px;
+  align-items: baseline;
+}
+
+.status-grid strong {
+  color: #080812;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.source-list span {
+  color: #080812;
+  background: var(--yellow);
+  border: 2px solid var(--orange);
+  border-radius: 3px;
+  padding: 4px 7px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.rail-warning {
+  border-color: var(--red);
+}
+
+.rail-warning h2 {
+  color: var(--red);
+  border-bottom-color: var(--red);
+}
+
+.dealer-mode .data-table {
+  min-width: min(100%, 420px);
+  color: #080812;
+  background: #ffffff;
+  border: 3px solid var(--orange);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+}
+
+.dealer-mode .data-table th {
+  color: #080812;
+  background: linear-gradient(90deg, var(--orange), var(--yellow));
+  border-bottom: 2px solid #080812;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.dealer-mode .data-table td {
+  color: #080812;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 11px;
+}
+
+.dealer-mode .price-card,
+.dealer-mode .confirm-card,
+.dealer-mode .tx-card {
+  animation: dealer-fadein 0.28s ease;
+}
+
+.dealer-mode .price-card {
+  background: #ffffff;
+  border: 3px solid var(--cyan);
+  border-left: 7px solid var(--cyan);
+  border-radius: 6px;
+  padding: 14px 18px;
+}
+
+.dealer-mode .price-symbol {
+  color: #7f7662;
+  font-size: 11px;
+}
+
+.dealer-mode .price-value {
+  color: var(--cyan);
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  text-shadow: none;
+}
+
+.dealer-mode .confirm-card {
+  max-width: 560px;
+  background: linear-gradient(135deg, var(--cream), #ffffff);
+  border: 4px solid var(--orange);
+  border-radius: 6px;
+  padding: 42px 16px 16px;
+  box-shadow: 0 8px 32px rgba(255, 138, 0, 0.35);
+}
+
+.dealer-mode .confirm-card::before {
+  content: 'CONFIRM THIS DEAL';
+  height: auto;
+  padding: 6px 11px;
+  color: #080812;
+  background: linear-gradient(90deg, var(--orange), var(--yellow));
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .confirm-summary {
+  color: #080812;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.85;
+}
+
+.dealer-mode .confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 0.7fr;
+}
+
+.dealer-mode .btn-confirm {
+  color: #080812;
+  background: var(--green);
+  border: 3px solid #080812;
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .btn-cancel {
+  color: var(--orange);
+  background: #ffffff;
+  border: 2px solid var(--orange);
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .tx-card {
+  position: relative;
+  background: var(--cream);
+  border: 3px solid var(--green);
+  border-left: 7px solid var(--green);
+  border-radius: 6px;
+  padding: 48px 16px 14px;
+  box-shadow: 0 8px 32px rgba(57, 255, 20, 0.2);
+}
+
+.dealer-mode .tx-card::after {
+  content: 'SOLD';
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  color: #ffffff;
+  background: var(--red);
+  border: 3px solid #ffffff;
+  border-radius: 4px;
+  padding: 2px 12px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: 1px;
+  animation: dealer-stamp 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.dealer-mode .tx-label {
+  color: #080812;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.dealer-mode .tx-hash {
+  color: var(--blue);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dealer-mode .card-empty {
+  color: #7f7662;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.dealer-mode .side-long,
+.dealer-mode .pnl-pos {
+  color: var(--lime-dark);
+}
+
+.dealer-mode .side-short,
+.dealer-mode .pnl-neg {
+  color: var(--red);
+}
+
+.dealer-mode .bridge-overlay {
+  background: rgba(8, 8, 18, 0.88);
+  backdrop-filter: none;
+  animation: dealer-fadein 0.2s ease;
+}
+
+.dealer-mode .bridge-modal {
+  width: min(92vw, 460px);
+  max-height: min(92dvh, 760px);
+  overflow-y: auto;
+  color: #080812;
+  background: #ffffff;
+  border: 4px solid var(--blue);
+  border-radius: 12px;
+  padding: 0;
+  gap: 0;
+  box-shadow: 0 0 0 2px var(--yellow), 0 24px 72px rgba(0, 0, 0, 0.55);
+}
+
+.dealer-mode .bridge-header {
+  color: #ffffff;
+  background: linear-gradient(90deg, var(--blue), #0c2d8a);
+  padding: 14px 16px;
+}
+
+.dealer-mode .bridge-title {
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .bridge-title::after {
+  content: 'FINANCE OFFICE';
+  display: inline-block;
+  margin-left: 10px;
+  color: var(--yellow);
+  border: 1px solid rgba(255, 230, 0, 0.7);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  vertical-align: middle;
+}
+
+.dealer-mode .bridge-close {
+  color: #ffffff;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.dealer-mode .bridge-row,
+.dealer-mode .bridge-quote,
+.dealer-mode .bridge-step,
+.dealer-mode .bridge-error,
+.dealer-mode .bridge-actions,
+.dealer-mode .bridge-note {
+  margin-left: 18px;
+  margin-right: 18px;
+}
+
+.dealer-mode .bridge-row:first-of-type {
+  margin-top: 18px;
+}
+
+.dealer-mode .bridge-label {
+  color: #6a6254;
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+
+.dealer-mode .bridge-chain-row,
+.dealer-mode .bridge-amount-row {
+  background: #ffffff;
+  border: 2px solid #dddddd;
+  border-radius: 6px;
+  padding: 11px 12px;
+}
+
+.dealer-mode .bridge-chain,
+.dealer-mode .bridge-input {
+  color: #080812;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.dealer-mode .bridge-chain-select option {
+  color: #080812;
+  background: #ffffff;
+}
+
+.dealer-mode .bridge-token,
+.dealer-mode .bridge-unit {
+  color: #ffffff;
+  background: var(--blue);
+  border: 2px solid var(--blue);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dealer-mode .bridge-input::placeholder {
+  color: #b4afa4;
+}
+
+.dealer-mode .bridge-arrow {
+  color: var(--blue);
+  font-family: var(--font-display);
+  font-size: 30px;
+  opacity: 1;
+  margin: 3px 0;
+}
+
+.dealer-mode .bridge-quote {
+  background: var(--cream);
+  border: 2px solid var(--yellow);
+  border-radius: 6px;
+  margin-top: 14px;
+}
+
+.dealer-mode .bridge-quote-row {
+  color: #6a6254;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.dealer-mode .bridge-quote-row span:last-child,
+.dealer-mode .bridge-quote-val {
+  color: #080812;
+  font-weight: 700;
+}
+
+.dealer-mode .bridge-step {
+  color: var(--blue);
+  font-weight: 700;
+  margin-top: 14px;
+}
+
+.dealer-mode .bridge-error {
+  color: var(--red);
+  background: rgba(255, 31, 31, 0.08);
+  border: 2px solid rgba(255, 31, 31, 0.35);
+  margin-top: 14px;
+}
+
+.dealer-mode .bridge-actions {
+  display: grid;
+  grid-template-columns: 0.95fr 1.6fr;
+  margin-top: 18px;
+}
+
+.dealer-mode .btn-bridge-quote,
+.dealer-mode .btn-bridge-send {
+  border-radius: 6px;
+  padding: 13px 12px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.dealer-mode .btn-bridge-quote {
+  color: #080812;
+  background: linear-gradient(180deg, var(--yellow), #ffb300);
+  border: 3px solid #080812;
+}
+
+.dealer-mode .btn-bridge-send {
+  color: #ffffff;
+  background: linear-gradient(180deg, var(--blue), #0c2d8a);
+  border: 3px solid var(--yellow);
+}
+
+.dealer-mode .bridge-note {
+  color: #6a6254;
+  margin-top: 14px;
+  margin-bottom: 18px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 1;
+}
+
+@media (max-width: 980px) {
+  .dealer-mode {
+    width: 100%;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .dealer-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .dealer-rail {
+    display: none;
+  }
+
+  .chat-panel {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .dealer-mode .header {
+    min-height: 72px;
+    padding: 8px 10px;
+    align-items: flex-start;
+  }
+
+  .dealer-mode .header-left {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .dealer-mode .header-right {
+    margin-left: auto;
+  }
+
+  .dealer-mode .powered-by,
+  .dealer-mode .wallet-address,
+  .dealer-mode .btn-clear {
+    display: none;
+  }
+
+  .dealer-mode .wallet-area {
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .dealer-mode .btn-autosign,
+  .dealer-mode .btn-yolo,
+  .dealer-mode .btn-bridge,
+  .dealer-mode .btn-disconnect {
+    font-size: 8px;
+    padding: 5px 7px;
+  }
+
+  .dealer-mode .btn-connect {
+    min-width: 120px;
+    padding: 9px 10px;
+    font-size: 12px;
+  }
+
+  .landing-screen {
+    padding: 34px 16px 48px;
+  }
+
+  .landing-card {
+    padding: 40px 20px 30px;
+  }
+
+  .sticker {
+    width: 52px;
+    height: 52px;
+    font-size: 8px;
+  }
+
+  .dealer-mode .chat {
+    padding: 14px 12px 18px;
+  }
+
+  .dealer-mode .msg-icon,
+  .chat-sticker {
+    display: none;
+  }
+
+  .dealer-mode .msg-body {
+    max-width: 100%;
+  }
+
+  .dealer-mode .msg-user .msg-text {
+    max-width: 86%;
+  }
+
+  .dealer-mode .confirm-actions,
+  .dealer-mode .bridge-actions {
+    grid-template-columns: 1fr;
+  }
+}

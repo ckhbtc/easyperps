@@ -21,17 +21,6 @@ import { Decimal } from 'decimal.js'
 import { startAppVersionMonitor } from './version'
 import './App.css'
 
-// ─── Theme ───────────────────────────────────────────────────────────────────
-
-type Theme = 'cyber' | 'retro' | 'nexus' | 'rave'
-
-const THEMES: { id: Theme; label: string; color: string }[] = [
-  { id: 'cyber', label: 'Cyber', color: '#00d4ff' },
-  { id: 'retro', label: 'Retro', color: '#ffdd00' },
-  { id: 'nexus', label: 'Nexus', color: '#4fc3f7' },
-  { id: 'rave',  label: 'Rave',  color: '#ff006e' },
-]
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type MessageRole = 'user' | 'agent' | 'system'
@@ -83,6 +72,13 @@ const RFQ_STATUS_PREFIXES = [
   'RFQ matched',
 ]
 
+const QUICK_COMMANDS = [
+  'long $50 INJ at 5x',
+  'short $10 ETH at 2x',
+  'show balances',
+  'bridge $10 from base',
+]
+
 function isRfqStatusMessage(content: string): boolean {
   return RFQ_STATUS_PREFIXES.some(prefix => content.startsWith(prefix))
 }
@@ -94,7 +90,7 @@ function parsePositiveAmount(text: string): number {
 }
 
 const WELCOME = agentMsg(
-  'Welcome to EasyPerps.\n\nConnect MetaMask to get started. Trades are quoted through Injective RFQ, and your first trade will ask for RFQ AutoSign authorization.\n\nExamples:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Arbitrum to Injective"'
+  'MAINNET MADNESS!\n\nBest deals on Injective perps, quoted through RFQ and settled in native USDC.\n\nTry:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Base to Injective"'
 )
 
 // ─── Cards ───────────────────────────────────────────────────────────────────
@@ -195,46 +191,6 @@ function RenderCard({ card }: { card: CardData }) {
     case 'confirm': return <ConfirmCard {...card} />
     case 'tx':      return <TxCard txHash={card.txHash} label={card.label} />
   }
-}
-
-// ─── Theme Picker ─────────────────────────────────────────────────────────────
-
-function ThemePicker({ theme, onChange }: { theme: Theme; onChange: (t: Theme) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const current = THEMES.find(t => t.id === theme)!
-
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [open])
-
-  return (
-    <div className="theme-picker" ref={ref}>
-      <button className="theme-btn" onClick={() => setOpen(o => !o)}>
-        <span className="theme-swatch" style={{ background: current.color }} />
-        {current.label}
-      </button>
-      {open && (
-        <div className="theme-dropdown">
-          {THEMES.map(t => (
-            <button
-              key={t.id}
-              className={`theme-option${theme === t.id ? ' active' : ''}`}
-              onClick={() => { onChange(t.id); setOpen(false) }}
-            >
-              <span className="theme-swatch" style={{ background: t.color }} />
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ─── Bridge Modal ─────────────────────────────────────────────────────────────
@@ -420,12 +376,119 @@ Mint tx:    ${result.mintTxHash}`)
   )
 }
 
+function DealerTicker() {
+  return (
+    <>
+      <div className="dealer-ticker" aria-hidden="true">
+        <div className="dealer-ticker-track">
+          <span>HOT RFQ DEALS</span>
+          <span>MAINNET MADNESS</span>
+          <span>NO BACKEND</span>
+          <span>FAST QUOTES</span>
+          <span>NOT FINANCIAL ADVICE</span>
+          <span>NATIVE USDC</span>
+          <span>ASK ABOUT BRIDGING</span>
+          <span>HOT RFQ DEALS</span>
+          <span>MAINNET MADNESS</span>
+          <span>NO BACKEND</span>
+          <span>FAST QUOTES</span>
+          <span>NOT FINANCIAL ADVICE</span>
+          <span>NATIVE USDC</span>
+          <span>ASK ABOUT BRIDGING</span>
+        </div>
+      </div>
+      <div className="rainbow-stripe" aria-hidden="true" />
+    </>
+  )
+}
+
+function DealerLogo() {
+  return (
+    <span className="logo" aria-label="EasyPerps">
+      EASY<span>PERPS</span>
+    </span>
+  )
+}
+
+function LandingScreen({ connecting, onConnect }: { connecting: boolean; onConnect: () => void }) {
+  return (
+    <main className="landing-screen">
+      <section className="landing-card" aria-labelledby="landing-title">
+        <span className="sticker sticker-red">NO BACKEND</span>
+        <span className="sticker sticker-yellow">RFQ POWERED</span>
+        <span className="sticker sticker-blue">INJECTIVE MAINNET</span>
+        <p className="landing-eyebrow">Welcome to</p>
+        <h1 id="landing-title">EASYPERPS</h1>
+        <p className="landing-subtitle">AUTO MALL</p>
+        <p className="landing-copy">
+          Type the trade, confirm the deal, sign from MetaMask. RFQ quotes, native USDC markets,
+          and CCTP bridge support are packed into one very unreasonable showroom.
+        </p>
+        <button className="btn btn-connect landing-connect" onClick={onConnect} disabled={connecting}>
+          {connecting ? 'CONNECTING...' : 'CONNECT WALLET NOW'}
+        </button>
+        <div className="landing-badges">
+          <span>RFQ</span>
+          <span>NATIVE USDC</span>
+          <span>CCTP</span>
+          <span>AUTOSIGN</span>
+          <span>MAINNET</span>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function CommandChips({ onSelect }: { onSelect: (command: string) => void }) {
+  return (
+    <div className="quick-strip" aria-label="Quick commands">
+      {QUICK_COMMANDS.map(command => (
+        <button key={command} type="button" onClick={() => onSelect(command)}>
+          {command.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function DealerRail({ wallet, autoSign, yolo }: { wallet: WalletInfo; autoSign: boolean; yolo: boolean }) {
+  return (
+    <aside className="dealer-rail" aria-label="Trading status">
+      <section className="rail-panel">
+        <h2>Finance Desk</h2>
+        <div className="wallet-ticket">
+          <span>Connected buyer</span>
+          <strong>{wallet.injAddress.slice(0, 12)}...{wallet.injAddress.slice(-4)}</strong>
+        </div>
+        <div className="status-grid">
+          <span>RFQ</span><strong>ONLINE</strong>
+          <span>AutoSign</span><strong>{autoSign ? 'ON' : 'ASK FIRST'}</strong>
+          <span>Yolo</span><strong>{yolo ? 'LIVE' : 'OFF'}</strong>
+          <span>Quote asset</span><strong>USDC</strong>
+        </div>
+      </section>
+
+      <section className="rail-panel">
+        <h2>Bridge Lot</h2>
+        <div className="source-list">
+          {SOURCE_CHAINS.map(chain => (
+            <span key={chain.id}>{chain.shortName}</span>
+          ))}
+        </div>
+        <p>Burn native USDC on source. Mint native USDC on Injective EVM.</p>
+      </section>
+
+      <section className="rail-panel rail-warning">
+        <h2>Dealer Note</h2>
+        <p>Perpetuals carry significant risk. Verify size, leverage, and chain before signing.</p>
+      </section>
+    </aside>
+  )
+}
+
 // ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [theme, setTheme] = useState<Theme>(() =>
-    (localStorage.getItem('ep-theme') as Theme) || 'cyber'
-  )
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [autoSign, setAutoSign] = useState(false)
@@ -440,12 +503,6 @@ export default function App() {
   const [pendingClarification, setPendingClarification] = useState<Partial<ParsedIntent> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-
-  // Apply theme to document root
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('ep-theme', theme)
-  }, [theme])
 
   useEffect(() => {
     return startAppVersionMonitor({
@@ -926,26 +983,28 @@ export default function App() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="app">
+    <div className={`app dealer-mode ${wallet ? 'app-connected' : 'app-disconnected'}`}>
+      <DealerTicker />
+
       <header className="header">
         <div className="header-left">
-          <span className="logo">EASYPERPS</span>
+          <DealerLogo />
           <span className="network-badge">Mainnet</span>
-          <span className="powered-by">Powered by Injective</span>
+          <span className="powered-by">Auto Mall · Powered by Injective</span>
         </div>
 
         <div className="header-right">
-          <button className="btn-clear" onClick={handleClearHistory} data-tooltip="Clear chat history">
-            ⌫ Clear
-          </button>
-
-          <ThemePicker theme={theme} onChange={setTheme} />
+          {wallet && (
+            <button className="btn-clear" onClick={handleClearHistory} data-tooltip="Clear chat history">
+              Clear
+            </button>
+          )}
 
           {wallet ? (
             <div className="wallet-area">
               <span className="wallet-address">
                 <span className="wallet-dot" />
-                {wallet.injAddress.slice(0, 10)}…{wallet.injAddress.slice(-4)}
+                {wallet.injAddress.slice(0, 10)}...{wallet.injAddress.slice(-4)}
               </span>
               <button
                 className={`btn-autosign${autoSign ? ' active' : ''}`}
@@ -953,7 +1012,7 @@ export default function App() {
                 disabled={autoSignBusy}
                 data-tooltip={autoSignBusy ? undefined : (autoSign ? 'RFQ AutoSign active, click to disable' : 'Enable RFQ AutoSign')}
               >
-                {autoSignBusy ? '…' : '⚡'}
+                {autoSignBusy ? '...' : (autoSign ? 'AUTOSIGN ON' : 'RFQ AUTO')}
               </button>
               {autoSign && (
                 <button
@@ -963,13 +1022,13 @@ export default function App() {
                     setYolo(next)
                     setMessages(prev => [...prev, systemMsg(
                       next
-                        ? '🎰 Yolo mode enabled, trades fire instantly, no confirmation.'
+                        ? 'Yolo mode enabled, trades fire instantly, no confirmation.'
                         : 'Yolo mode disabled, confirmation required before trades.'
                     )])
                   }}
                   data-tooltip={yolo ? 'Yolo mode on, click to disable' : 'Enable Yolo, skip confirmations'}
                 >
-                  🎰
+                  YOLO
                 </button>
               )}
               <button
@@ -977,65 +1036,78 @@ export default function App() {
                 onClick={() => openBridge()}
                 data-tooltip="Bridge native USDC from supported CCTP sources"
               >
-                🌉
+                BRIDGE
               </button>
               <button className="btn-disconnect" onClick={handleDisconnect} data-tooltip="Disconnect wallet">
-                Disconnect
+                Walk Away
               </button>
             </div>
           ) : (
             <button className="btn btn-connect" onClick={handleConnect} disabled={connecting}>
-              {connecting ? 'Connecting…' : 'Connect Wallet'}
+              {connecting ? 'CONNECTING...' : 'CONNECT NOW!!!'}
             </button>
           )}
         </div>
       </header>
 
-      <main className="chat">
-        {messages.map(msg => (
-          <div key={msg.id} className={`msg msg-${msg.role}`}>
-            {msg.role === 'agent' && <span className="msg-icon">◈</span>}
-            <div className="msg-body">
-              {msg.content && <p className="msg-text">{msg.content}</p>}
-              {msg.card && <RenderCard card={msg.card} />}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="msg msg-agent">
-            <span className="msg-icon">◈</span>
-            <div className="msg-body">
-              <span className="typing"><span /><span /><span /></span>
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </main>
+      {wallet ? (
+        <div className="dealer-workspace">
+          <section className="chat-panel">
+            <div className="chat-strip">EASYPERPS AGENT - AUTO MALL MODE</div>
+            <span className="chat-sticker chat-sticker-rfq">RFQ POWERED</span>
+            <span className="chat-sticker chat-sticker-backend">NO BACKEND</span>
 
-      <footer className="input-bar">
-        <input
-          ref={inputRef}
-          className="chat-input"
-          placeholder={
-            wallet
-              ? 'long $50 INJ at 5x  ·  close my BTC  ·  bridge $10  ·  show positions'
-              : 'connect wallet to start trading…'
-          }
-          value={input}
-          disabled={!wallet || loading}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
-          }}
-        />
-        <button
-          className="btn btn-send"
-          onClick={handleSend}
-          disabled={!wallet || loading || !input.trim()}
-        >
-          ↑
-        </button>
-      </footer>
+            <main className="chat">
+              {messages.map(msg => (
+                <div key={msg.id} className={`msg msg-${msg.role}`}>
+                  {msg.role === 'agent' && <span className="msg-icon">DEAL</span>}
+                  <div className="msg-body">
+                    {msg.content && <p className="msg-text">{msg.content}</p>}
+                    {msg.card && <RenderCard card={msg.card} />}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className="msg msg-agent">
+                  <span className="msg-icon">RFQ</span>
+                  <div className="msg-body">
+                    <span className="typing"><span /><span /><span /></span>
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </main>
+
+            <footer className="input-bar">
+              <CommandChips onSelect={setInput} />
+              <div className="input-row">
+                <input
+                  ref={inputRef}
+                  className="chat-input"
+                  placeholder="type your order..."
+                  value={input}
+                  disabled={loading}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+                  }}
+                />
+                <button
+                  className="btn btn-send"
+                  onClick={handleSend}
+                  disabled={loading || !input.trim()}
+                >
+                  GO
+                </button>
+              </div>
+            </footer>
+          </section>
+
+          <DealerRail wallet={wallet} autoSign={autoSign} yolo={yolo} />
+        </div>
+      ) : (
+        <LandingScreen connecting={connecting} onConnect={handleConnect} />
+      )}
 
       {bridgeOpen && wallet && (
         <BridgeModal

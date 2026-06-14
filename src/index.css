@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=Press+Start+2P&family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Fredoka+One&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,700&family=Space+Mono:wght@400;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -7,42 +7,49 @@
    ═══════════════════════════════════════════════════════════════ */
 :root,
 [data-theme="cyber"] {
-  --bg:        #050508;
-  --surface:   #0d0d14;
-  --surface2:  #111119;
-  --surface3:  #16161f;
-  --border:    #1e1e2e;
-  --border2:   #2a2a3e;
-  --text:      #e2e2f0;
-  --text-dim:  #5a5a72;
-  --text-mid:  #9494b0;
+  --bg:        #080812;
+  --surface:   #fff7d6;
+  --surface2:  #fffde7;
+  --surface3:  #ffffff;
+  --border:    #ff8a00;
+  --border2:   #080812;
+  --text:      #080812;
+  --text-dim:  #7f7662;
+  --text-mid:  #33302a;
 
-  --cyan:        #00d4ff;
-  --cyan-dim:    rgba(0, 212, 255, 0.12);
-  --cyan-glow:   rgba(0, 212, 255, 0.35);
-  --violet:      #a855f7;
-  --violet-dim:  rgba(168, 85, 247, 0.12);
-  --violet-glow: rgba(168, 85, 247, 0.4);
-  --green:       #10f090;
-  --green-dim:   rgba(16, 240, 144, 0.10);
-  --green-glow:  rgba(16, 240, 144, 0.4);
-  --red:         #ff4466;
-  --red-dim:     rgba(255, 68, 102, 0.12);
-  --orange:      #ff9900;
-  --orange-dim:  rgba(255, 153, 0, 0.12);
+  --cyan:        #00d9ff;
+  --cyan-dim:    rgba(0, 217, 255, 0.14);
+  --cyan-glow:   rgba(0, 217, 255, 0.34);
+  --violet:      #ff2bbf;
+  --violet-dim:  rgba(255, 43, 191, 0.14);
+  --violet-glow: rgba(255, 43, 191, 0.35);
+  --green:       #39ff14;
+  --green-dim:   rgba(57, 255, 20, 0.14);
+  --green-glow:  rgba(57, 255, 20, 0.36);
+  --red:         #ff1f1f;
+  --red-dim:     rgba(255, 31, 31, 0.14);
+  --orange:      #ff8a00;
+  --orange-dim:  rgba(255, 138, 0, 0.16);
 
-  --accent:    var(--cyan);
-  --accent2:   var(--violet);
+  --yellow:     #ffe600;
+  --lime-dark:  #1aaa00;
+  --blue:       #1857ff;
+  --cream:      #fff7d6;
+  --parchment:  #fffde7;
 
-  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --accent:    var(--orange);
+  --accent2:   var(--green);
+
+  --font-body: 'Barlow Condensed', system-ui, sans-serif;
+  --font-display: 'Anton', Impact, sans-serif;
   --font-mono: 'Space Mono', monospace;
 
-  --radius:    10px;
-  --radius-sm: 6px;
+  --radius:    12px;
+  --radius-sm: 8px;
   --radius-xs: 4px;
 
-  --scanline-color: rgba(0, 0, 0, 0.03);
-  --grid-color: rgba(0, 212, 255, 0.025);
+  --scanline-color: transparent;
+  --grid-color: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -180,9 +187,15 @@ html, body, #root {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background:
+    repeating-linear-gradient(45deg, rgba(255,230,0,0.035) 0 12px, transparent 12px 24px),
+    #080812;
 }
 
 [data-theme="retro"] body { font-size: 10px; }
