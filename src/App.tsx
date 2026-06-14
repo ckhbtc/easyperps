@@ -6,9 +6,10 @@ import type { ParsedIntent } from './nlp'
 import { getMarketPrice, getBalances, getPositions, resolveMarket, listMarkets } from './injective'
 import type { PositionInfo, BalanceInfo, PerpMarket } from './injective'
 import { openTrade, closeTrade } from './tx'
-import { enableAutoSign, disableAutoSign } from './autosign'
+import { enableAutoSign, disableAutoSign, isAutoSignActive } from './autosign'
 import { fetchBridgeQuote, executeBridge, isValidBridgeAmount, MAX_BRIDGE_USDC } from './bridge'
 import type { BridgeEstimation } from './bridge'
+import { Decimal } from 'decimal.js'
 import './App.css'
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -45,8 +46,8 @@ type CardData =
 interface PendingTrade {
   side: 'long' | 'short'
   symbol: string
-  amount: number
-  leverage: number
+  amount: string
+  leverage: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -63,6 +64,20 @@ function systemMsg(content: string): Message {
   return { id: uid(), role: 'system', content, ts: Date.now() }
 }
 
+const RFQ_STATUS_PREFIXES = [
+  'Requesting RFQ',
+  'Preparing RFQ',
+  'Matching RFQ',
+  'Refreshing RFQ',
+  'Signing RFQ',
+  'Broadcasting RFQ',
+  'RFQ matched',
+]
+
+function isRfqStatusMessage(content: string): boolean {
+  return RFQ_STATUS_PREFIXES.some(prefix => content.startsWith(prefix))
+}
+
 function parsePositiveAmount(text: string): number {
   const match = /^\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:usdc|usdt|usd|dollars?)?\s*$/i.exec(text)
   const amount = match ? parseFloat(match[1]) : 0
@@ -70,7 +85,7 @@ function parsePositiveAmount(text: string): number {
 }
 
 const WELCOME = agentMsg(
-  'Welcome to EasyPerps.\n\nConnect MetaMask to get started, then tell me what you want to do.\n\nExamples:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Arbitrum to Injective"'
+  'Welcome to EasyPerps.\n\nConnect MetaMask to get started. Trades are quoted through Injective RFQ, and your first trade will ask for RFQ AutoSign authorization.\n\nExamples:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Arbitrum to Injective"'
 )
 
 // ─── Cards ───────────────────────────────────────────────────────────────────
@@ -411,9 +426,12 @@ export default function App() {
     return onAccountsChanged((injAddr) => {
       if (!injAddr) {
         setWallet(null)
+        setAutoSign(false)
+        setYolo(false)
         setMessages(prev => [...prev, systemMsg('Wallet disconnected.')])
       } else {
         setWallet(w => w ? { ...w, injAddress: injAddr } : null)
+        setAutoSign(isAutoSignActive(injAddr))
       }
     })
   }, [])
@@ -422,10 +440,23 @@ export default function App() {
     setMessages(prev => [...prev, agentMsg(content, card)])
   }, [])
 
+  const replaceRfqStatus = useCallback((content: string, card?: CardData) => {
+    setMessages(prev => {
+      const copy = [...prev]
+      const last = copy[copy.length - 1]
+      if (last?.role === 'agent' && isRfqStatusMessage(last.content)) {
+        copy[copy.length - 1] = agentMsg(content, card)
+      } else {
+        copy.push(agentMsg(content, card))
+      }
+      return copy
+    })
+  }, [])
+
   // ─── Actions ─────────────────────────────────────────────────────────────
 
   function handleDisconnect() {
-    disableAutoSign()
+    disableAutoSign(wallet?.injAddress)
     setAutoSign(false)
     setYolo(false)
     setWallet(null)
@@ -445,13 +476,23 @@ export default function App() {
   async function handleAutoSign() {
     if (!wallet) return
     if (autoSign) {
-      disableAutoSign()
+      disableAutoSign(wallet.injAddress)
       setAutoSign(false)
       setYolo(false)
-      setMessages(prev => [...prev, systemMsg('AutoSign disabled.')])
+      setMessages(prev => [...prev, systemMsg('RFQ AutoSign disabled.')])
       return
     }
+    await ensureRfqAutoSign()
+  }
+
+  async function ensureRfqAutoSign(reason?: string): Promise<boolean> {
+    if (!wallet) return false
+    if (isAutoSignActive(wallet.injAddress)) {
+      setAutoSign(true)
+      return true
+    }
     setAutoSignBusy(true)
+    if (reason) setMessages(prev => [...prev, systemMsg(reason)])
     try {
       await enableAutoSign(
         wallet.injAddress,
@@ -459,8 +500,10 @@ export default function App() {
         msg => setMessages(prev => [...prev, systemMsg(msg)]),
       )
       setAutoSign(true)
+      return true
     } catch (e) {
-      setMessages(prev => [...prev, agentMsg(`AutoSign setup failed: ${(e as Error).message}`)])
+      setMessages(prev => [...prev, agentMsg(`RFQ AutoSign setup failed: ${(e as Error).message}`)])
+      return false
     } finally {
       setAutoSignBusy(false)
     }
@@ -475,6 +518,7 @@ export default function App() {
     try {
       const info = await connectMetaMask()
       setWallet(info)
+      setAutoSign(isAutoSignActive(info.injAddress))
       setMessages(prev => [
         ...prev,
         systemMsg(`Connected: ${info.injAddress.slice(0, 14)}…`),
@@ -536,7 +580,7 @@ export default function App() {
       await executeIntent(fresh.intent)
       return
     } else if (base.kind === 'trade') {
-      // Unknown parse — try to extract a single bare clarification value:
+      // Unknown parse, try to extract a single bare clarification value:
       //   "5x" or "10x"  → leverage
       //   "5" or "100"   → USDT amount
       //   "INJ" / "BTC"  → symbol
@@ -655,30 +699,37 @@ export default function App() {
     }
 
     const price = await getMarketPrice(intent.symbol).catch(() => '?')
-    let notional = intent.amount
+    let notional = intent.amount ? new Decimal(intent.amount.toString()) : null
     if (!notional && intent.qty && price !== '?') {
-      notional = parseFloat((intent.qty * parseFloat(price)).toFixed(4))
+      notional = new Decimal(intent.qty.toString()).mul(new Decimal(price)).toDecimalPlaces(4)
     }
-    if (!notional || notional <= 0) {
-      pushAgent(`Couldn't determine trade size — price unavailable. Try specifying a USDT amount, e.g. "$10 of ${intent.symbol}".`)
+    if (!notional || notional.lte(0)) {
+      pushAgent(`Couldn't determine trade size, price unavailable. Try specifying a USDT amount, e.g. "$10 of ${intent.symbol}".`)
       return
     }
     const sizeDesc = intent.qty && !intent.amount
-      ? `${intent.qty} ${intent.symbol} (~$${notional})`
-      : `$${notional} USDT`
-    const margin = (notional / intent.leverage).toFixed(2)
+      ? `${intent.qty} ${intent.symbol} (~$${notional.toFixed()})`
+      : `$${notional.toFixed()} USDT`
+    const leverage = new Decimal(intent.leverage.toString())
+    const margin = notional.div(leverage).toDecimalPlaces(2).toFixed()
     const summary = [
       `Direction : ${intent.side.toUpperCase()}`,
       `Market    : ${market.ticker}`,
+      'Route     : RFQ quote',
       `Notional  : ${sizeDesc}`,
       `Leverage  : ${intent.leverage}x`,
       `Margin req: ~$${margin} USDT`,
       `Spot price: $${price}`,
     ].join('\n')
 
-    const pendingTrade: PendingTrade = { ...intent, amount: notional }
+    const pendingTrade: PendingTrade = {
+      side: intent.side,
+      symbol: intent.symbol,
+      amount: notional.toFixed(),
+      leverage: leverage.toFixed(),
+    }
 
-    // Yolo mode: autosign is active and confirmation skipped — fire immediately.
+    // Yolo mode: autosign is active and confirmation skipped, fire immediately.
     if (autoSign && yolo) {
       await executeTrade(pendingTrade)
       return
@@ -698,7 +749,10 @@ export default function App() {
   async function executeTrade(trade: PendingTrade) {
     if (!wallet) return
     setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
-    pushAgent(`Submitting ${trade.side} order for ${trade.symbol}…${autoSign ? '' : ' (MetaMask will prompt)'}`)
+    const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before trading.')
+    if (!ready) return
+
+    pushAgent(`Requesting RFQ quotes for ${trade.side} ${trade.symbol}...`)
     try {
       const market = await resolveMarket(trade.symbol)
       const result = await openTrade({
@@ -706,16 +760,17 @@ export default function App() {
         ethAddress: wallet.ethAddress,
         market,
         side: trade.side,
-        notionalUsdt: trade.amount,
-        leverage: trade.leverage,
+        notionalUsdt: Number(trade.amount),
+        leverage: Number(trade.leverage),
+        onProgress: replaceRfqStatus,
       })
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
-        if (last.content.startsWith('Submitting'))
-          copy[copy.length - 1] = agentMsg(`${trade.side.toUpperCase()} order submitted!`, {
+        if (last && isRfqStatusMessage(last.content))
+          copy[copy.length - 1] = agentMsg(`${trade.side.toUpperCase()} RFQ settlement confirmed.`, {
             type: 'tx', txHash: result.txHash,
-            label: `${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
+            label: `RFQ ${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
           })
         return copy
       })
@@ -723,7 +778,7 @@ export default function App() {
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
-        if (last.content.startsWith('Submitting'))
+        if (last && isRfqStatusMessage(last.content))
           copy[copy.length - 1] = agentMsg(`Trade failed: ${(e as Error).message}`)
         return copy
       })
@@ -761,6 +816,7 @@ export default function App() {
     const summary = [
       `Direction : ${pos.side.toUpperCase()}`,
       `Market    : ${pos.ticker}`,
+      'Route     : RFQ close quote',
       `Quantity  : ${pos.quantity}`,
       `Entry     : $${pos.entryPrice}`,
       `Mark      : $${pos.markPrice}`,
@@ -794,7 +850,10 @@ export default function App() {
   async function executeClose(pos: PositionInfo) {
     if (!wallet) return
     setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
-    pushAgent(`Closing ${pos.symbol} position…${autoSign ? '' : ' (MetaMask will prompt)'}`)
+    const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before closing positions.')
+    if (!ready) return
+
+    pushAgent(`Requesting RFQ close quote for ${pos.symbol}...`)
     try {
       const market = await resolveMarket(pos.symbol)
       const result = await closeTrade({
@@ -803,13 +862,14 @@ export default function App() {
         market,
         side: pos.side,
         quantity: pos.quantity,
+        onProgress: replaceRfqStatus,
       })
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
-        if (last.content.startsWith('Closing'))
-          copy[copy.length - 1] = agentMsg('Position closed!', {
-            type: 'tx', txHash: result.txHash, label: `Close ${pos.symbol} ${pos.side}`,
+        if (last && isRfqStatusMessage(last.content))
+          copy[copy.length - 1] = agentMsg('RFQ close settlement confirmed.', {
+            type: 'tx', txHash: result.txHash, label: `RFQ close ${pos.symbol} ${pos.side}`,
           })
         return copy
       })
@@ -817,7 +877,7 @@ export default function App() {
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
-        if (last.content.startsWith('Closing'))
+        if (last && isRfqStatusMessage(last.content))
           copy[copy.length - 1] = agentMsg(`Close failed: ${(e as Error).message}`)
         return copy
       })
@@ -852,7 +912,7 @@ export default function App() {
                 className={`btn-autosign${autoSign ? ' active' : ''}`}
                 onClick={handleAutoSign}
                 disabled={autoSignBusy}
-                data-tooltip={autoSignBusy ? undefined : (autoSign ? 'AutoSign active — click to disable' : 'Enable AutoSign')}
+                data-tooltip={autoSignBusy ? undefined : (autoSign ? 'RFQ AutoSign active, click to disable' : 'Enable RFQ AutoSign')}
               >
                 {autoSignBusy ? '…' : '⚡'}
               </button>
@@ -864,11 +924,11 @@ export default function App() {
                     setYolo(next)
                     setMessages(prev => [...prev, systemMsg(
                       next
-                        ? '🎰 Yolo mode enabled — trades fire instantly, no confirmation.'
-                        : 'Yolo mode disabled — confirmation required before trades.'
+                        ? '🎰 Yolo mode enabled, trades fire instantly, no confirmation.'
+                        : 'Yolo mode disabled, confirmation required before trades.'
                     )])
                   }}
-                  data-tooltip={yolo ? 'Yolo mode on — click to disable' : 'Enable Yolo — skip confirmations'}
+                  data-tooltip={yolo ? 'Yolo mode on, click to disable' : 'Enable Yolo, skip confirmations'}
                 >
                   🎰
                 </button>

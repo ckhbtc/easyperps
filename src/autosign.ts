@@ -14,7 +14,7 @@
  *   1. Build trading message with `injectiveAddress` = user's main address.
  *   2. Wrap it in MsgExec with `grantee` = ephemeral address.
  *   3. Sign + broadcast via MsgBroadcasterWithPk.broadcastWithFeeDelegation()
- *      using the ephemeral key — no MetaMask popup, no INJ needed.
+ *      using the ephemeral key, no MetaMask popup, no INJ needed.
  *
  *  Disable:
  *   - Clear module state. The on-chain grant remains valid until expiry
@@ -338,10 +338,10 @@ export async function broadcastAutoSign(
   })
 
   // Broadcast with the ephemeral key using Injective fee delegation
-  // (web3 gateway sponsors the gas — ephemeral key needs no INJ).
+  // (web3 gateway sponsors the gas, ephemeral key needs no INJ).
   // Use the same EVM chain ID that MetaMask reported at grant time.
   // Injective mainnet validates the TypedDataChainID in the Web3Extension against
-  // the chain's expected EVM chain ID — using a mismatched value (e.g. 888) fails.
+  // the chain's expected EVM chain ID. A mismatched value, e.g. 888, fails.
   const broadcaster = new MsgBroadcasterWithPk({
     network:    NETWORK,
     endpoints,
