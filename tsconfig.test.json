@@ -7,6 +7,8 @@
     "types": ["node"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "checkJs": false,
     "skipLibCheck": true,
     "strict": true,
     "rootDir": ".",
@@ -20,5 +22,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src/nlp.ts", "src/bridge.ts", "src/wallet.ts", "tests/**/*.test.ts"]
+  "include": ["src/nlp.ts", "src/bridge.ts", "src/wallet.ts", "src/vendor/rfq/**/*.js", "tests/**/*.test.ts"]
 }
