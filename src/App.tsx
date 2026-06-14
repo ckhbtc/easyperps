@@ -282,10 +282,13 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
         setStep(msg)
         onStatus(msg)
       })
-      onStatus(`🌉 Bridge submitted! Native USDC arriving on Injective shortly.
-Approve tx: ${result.approveTxHash}
-Bridge tx:  ${result.bridgeTxHash}
-Order ID:   ${result.orderId}`)
+      const approveLine = result.approveTxHash
+        ? `Approve tx: ${result.approveTxHash}`
+        : 'Approve tx: skipped, allowance already set'
+      onStatus(`🌉 Bridge complete! Native USDC minted on Injective.
+${approveLine}
+Burn tx:    ${result.burnTxHash}
+Mint tx:    ${result.mintTxHash}`)
       onClose()
     } catch (e) {
       const msg = (e as Error).message
@@ -295,8 +298,6 @@ Order ID:   ${result.orderId}`)
       setBridging(false)
     }
   }
-
-  const fixFeeEth = quote ? (Number(quote.fixFeeWei) / 1e18).toFixed(4) : '~0.001'
 
   return (
     <div className="bridge-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -348,12 +349,12 @@ Order ID:   ${result.orderId}`)
               <span className="bridge-quote-val">{quote.dstAmount} USDC</span>
             </div>
             <div className="bridge-quote-row">
-              <span>Protocol fee</span>
-              <span>{(Number(quote.protocolFee) / 1e6).toFixed(4)} USDC</span>
+              <span>Route</span>
+              <span>{quote.route}</span>
             </div>
             <div className="bridge-quote-row">
-              <span>ETH fix fee</span>
-              <span>{fixFeeEth} ETH</span>
+              <span>CCTP fee</span>
+              <span>0 USDC, standard finality</span>
             </div>
           </div>
         )}
@@ -384,8 +385,8 @@ Order ID:   ${result.orderId}`)
         </div>
 
         <p className="bridge-note">
-          Needs ETH on Arbitrum for gas + fix fee ({fixFeeEth} ETH).
-          ETA: ~2 min.
+          Needs ETH on Arbitrum for burn gas and INJ on Injective EVM for mint gas.
+          Circle attestation usually takes a few minutes.
         </p>
       </div>
     </div>

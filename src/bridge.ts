@@ -1,147 +1,185 @@
 /**
- * DeBridge inbound bridge — Arbitrum USDC → Injective USDT.
+ * Circle CCTP V2 inbound bridge: Arbitrum USDC to native Injective USDC.
  *
- * Uses MetaMask to sign on Arbitrum; no private key exposure.
- * Flow:
- *   1. Fetch bridge quote (estimation only).
- *   2. On execute: fetch full calldata, switch to Arbitrum, approve USDC, submit bridge tx.
+ * EasyPerps is a static SPA, so the user submits both source-chain burn and
+ * destination-chain mint transactions from MetaMask. The mint side is
+ * permissionless, but it still requires a small amount of INJ on Injective EVM
+ * for gas.
  */
 
-import { Decimal } from 'decimal.js'
+import { Interface } from 'ethers'
+import { NATIVE_USDC_EVM_ADDRESS } from './injective.js'
 
-const DEBRIDGE_API  = 'https://dln.debridge.finance/v1.0'
-const ARBITRUM_ID   = 42161
-const INJECTIVE_DLN = 100000029
+const TOKEN_MESSENGER_V2 = '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d'
+const MESSAGE_TRANSMITTER_V2 = '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64'
+const ATTESTATION_API = 'https://iris-api.circle.com'
+const ZERO_BYTES32 = '0'.repeat(64)
+const STANDARD_FINALITY = 2000
+const STANDARD_MAX_FEE = 0n
 
-// Arbitrum USDC (native)
-export const BRIDGE_SRC_TOKEN = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'
-// Injective EVM USDT
-export const BRIDGE_DST_TOKEN = '0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13'
+const APPROVE_SIG = '0x095ea7b3'
+const ALLOWANCE_SIG = '0xdd62ed3e'
+const DEPOSIT_FOR_BURN_SIG = '0x8e0250ee'
+const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d{1,6})?$/
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
-export interface BridgeEstimation {
-  srcAmount:    string   // human-readable
-  srcAmountBase: string  // raw base units
-  dstAmount:    string   // human-readable
-  dstAmountBase: string  // raw base units
-  protocolFee:  string   // base units of src token
-  fixFeeWei:    string   // native ETH fix fee in wei
+const RECEIVE_MESSAGE_IFACE = new Interface([
+  'function receiveMessage(bytes message, bytes attestation) returns (bool)',
+])
+
+interface BridgeChain {
+  id: number
+  hex: string
+  domain: number
+  name: string
+  shortName: string
+  nativeCurrency: { name: string; symbol: string; decimals: number }
+  rpcUrls: string[]
+  blockExplorerUrls: string[]
 }
 
-interface RawQuote {
-  orderId?: string
-  estimation?: {
-    srcChainTokenIn:  { amount: string; decimals: number }
-    dstChainTokenOut: { amount: string; decimals: number }
-  }
-  tx?: { to?: string; data?: string; value?: string; allowanceTarget?: string }
-  fixFee?: string
-  protocolFee?: string
+interface BridgeSourceChain extends BridgeChain {
+  usdc: string
 }
 
-// ─── Amount helpers ───────────────────────────────────────────────────────────
+export const ARBITRUM_SOURCE: BridgeSourceChain = {
+  id: 42161,
+  hex: '0xa4b1',
+  domain: 3,
+  name: 'Arbitrum One',
+  shortName: 'Arbitrum',
+  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+  rpcUrls: ['https://arbitrum-one-rpc.publicnode.com', 'https://arb1.arbitrum.io/rpc'],
+  blockExplorerUrls: ['https://arbiscan.io'],
+  usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+}
 
-// Hard cap on a single bridge so a fat-fingered "1000000" doesn't try to
-// approve a million USDC. This is a UX guard, not a chain-side limit.
+export const INJECTIVE_EVM: BridgeChain = {
+  id: 1776,
+  hex: '0x6f0',
+  domain: 29,
+  name: 'Injective',
+  shortName: 'Injective',
+  nativeCurrency: { name: 'INJ', symbol: 'INJ', decimals: 18 },
+  rpcUrls: ['https://sentry.evm-rpc.injective.network'],
+  blockExplorerUrls: ['https://blockscout.injective.network'],
+}
+
+export const BRIDGE_SRC_TOKEN = ARBITRUM_SOURCE.usdc
+export const BRIDGE_DST_TOKEN = NATIVE_USDC_EVM_ADDRESS
 export const MAX_BRIDGE_USDC = 100_000
 
-export function isValidBridgeAmount(amount: string): boolean {
-  const n = parseFloat(amount)
-  return Number.isFinite(n) && n > 0 && n <= MAX_BRIDGE_USDC
+export interface BridgeEstimation {
+  srcAmount: string
+  srcAmountBase: string
+  dstAmount: string
+  dstAmountBase: string
+  protocolFee: string
+  fixFeeWei: string
+  route: string
+  sourceChainId: number
+  sourceChain: string
+}
+
+export interface BridgeResult {
+  approveTxHash: string | null
+  burnTxHash: string
+  mintTxHash: string
+  estimation: BridgeEstimation
 }
 
 export function amountToBaseUnits(human: string, decimals = 6): bigint {
-  const amount = new Decimal(human)
-  if (!amount.isFinite() || amount.lte(0)) throw new Error('Invalid amount')
-
-  const base = amount.mul(new Decimal(10).pow(decimals))
-  if (!base.isInteger()) {
+  const amount = String(human).trim()
+  if (amount.startsWith('-')) throw new Error('Invalid amount')
+  if (!DECIMAL_AMOUNT_RE.test(amount)) {
     throw new Error(`Amount supports up to ${decimals} decimal places`)
   }
-  if (base.lte(0)) throw new Error('Invalid amount')
 
-  return BigInt(base.toFixed(0))
+  const [wholeRaw = '0', fracRaw = ''] = amount.split('.')
+  const base =
+    BigInt(wholeRaw) * 10n ** BigInt(decimals) +
+    BigInt((fracRaw + '0'.repeat(decimals)).slice(0, decimals))
+
+  if (base <= 0n) throw new Error('Invalid amount')
+  return base
 }
 
-export function amountFromBaseUnits(base: string, decimals = 6): string {
-  return new Decimal(base)
-    .div(new Decimal(10).pow(decimals))
-    .toFixed(decimals)
-    .replace(/\.?0+$/, '')
+export function amountFromBaseUnits(base: string | bigint, decimals = 6): string {
+  const raw = typeof base === 'bigint' ? base : BigInt(base)
+  const divisor = 10n ** BigInt(decimals)
+  const whole = raw / divisor
+  const frac = (raw % divisor).toString().padStart(decimals, '0').replace(/0+$/, '')
+  return frac ? `${whole}.${frac}` : whole.toString()
 }
 
-// ─── ERC20 approve calldata ───────────────────────────────────────────────────
+export function isValidBridgeAmount(amount: string): boolean {
+  try {
+    const base = amountToBaseUnits(amount)
+    const max = BigInt(MAX_BRIDGE_USDC) * 1_000_000n
+    return base > 0n && base <= max
+  } catch {
+    return false
+  }
+}
+
+function assertEvmAddress(address: string, label: string): void {
+  if (!EVM_ADDRESS_RE.test(address)) {
+    throw new Error(`${label} must be a 0x EVM address`)
+  }
+}
+
+function padUint(value: bigint | number): string {
+  return BigInt(value).toString(16).padStart(64, '0')
+}
+
+function padAddress(address: string): string {
+  return address.replace(/^0x/i, '').toLowerCase().padStart(64, '0')
+}
 
 function encodeApprove(spender: string, amount: bigint): string {
-  const sel     = '095ea7b3'
-  const addr    = spender.replace(/^0x/i, '').toLowerCase().padStart(64, '0')
-  const amt     = amount.toString(16).padStart(64, '0')
-  return `0x${sel}${addr}${amt}`
+  return `${APPROVE_SIG}${padAddress(spender)}${padUint(amount)}`
 }
 
-// ─── DeBridge API ─────────────────────────────────────────────────────────────
-
-async function callDln(params: Record<string, string | undefined>): Promise<RawQuote> {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined) qs.set(k, v)
-  }
-  const url  = `${DEBRIDGE_API}/dln/order/create-tx?${qs}`
-  const resp = await fetch(url)
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '')
-    throw new Error(`DeBridge API ${resp.status}: ${body}`)
-  }
-  return resp.json() as Promise<RawQuote>
+function encodeAllowance(owner: string, spender: string): string {
+  return `${ALLOWANCE_SIG}${padAddress(owner)}${padAddress(spender)}`
 }
 
-/** Get a read-only quote (no authority addresses needed). */
-export async function fetchBridgeQuote(
-  amount: string,
-  recipientEvm: string,
-): Promise<BridgeEstimation> {
-  const srcAmountBase = amountToBaseUnits(amount).toString()
-  const raw = await callDln({
-    srcChainId:                  ARBITRUM_ID.toString(),
-    srcChainTokenIn:             BRIDGE_SRC_TOKEN,
-    srcChainTokenInAmount:       srcAmountBase,
-    dstChainId:                  INJECTIVE_DLN.toString(),
-    dstChainTokenOut:            BRIDGE_DST_TOKEN,
-    dstChainTokenOutRecipient:   recipientEvm,
-  })
-
-  const est = raw.estimation
-  if (!est) throw new Error('No estimation in DeBridge response')
-
-  return {
-    srcAmount:     amount,
-    srcAmountBase,
-    dstAmount:     amountFromBaseUnits(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
-    dstAmountBase: est.dstChainTokenOut.amount,
-    protocolFee:   raw.protocolFee ?? '0',
-    fixFeeWei:     raw.fixFee ?? '1000000000000000',
-  }
+function encodeDepositForBurn(amount: bigint, recipientEvm: string): string {
+  return [
+    DEPOSIT_FOR_BURN_SIG,
+    padUint(amount),
+    padUint(INJECTIVE_EVM.domain),
+    padAddress(recipientEvm),
+    padAddress(ARBITRUM_SOURCE.usdc),
+    ZERO_BYTES32,
+    padUint(STANDARD_MAX_FEE),
+    padUint(STANDARD_FINALITY),
+  ].join('')
 }
 
-// ─── MetaMask helpers ─────────────────────────────────────────────────────────
+function encodeReceiveMessage(message: string, attestation: string): string {
+  return RECEIVE_MESSAGE_IFACE.encodeFunctionData('receiveMessage', [message, attestation])
+}
 
-async function switchToArbitrum(): Promise<void> {
-  const chainHex = '0xa4b1' // 42161
+async function switchToChain(chain: BridgeChain): Promise<void> {
+  const current = await window.ethereum!.request({ method: 'eth_chainId' }) as string
+  if (current.toLowerCase() === chain.hex.toLowerCase()) return
+
   try {
     await window.ethereum!.request({
       method: 'wallet_switchEthereumChain',
-      params: [{ chainId: chainHex }],
+      params: [{ chainId: chain.hex }],
     })
   } catch (err: unknown) {
-    // Chain not added — add it
     if ((err as { code?: number }).code === 4902) {
       await window.ethereum!.request({
         method: 'wallet_addEthereumChain',
         params: [{
-          chainId:         chainHex,
-          chainName:       'Arbitrum One',
-          nativeCurrency:  { name: 'ETH', symbol: 'ETH', decimals: 18 },
-          rpcUrls:         ['https://arb1.arbitrum.io/rpc'],
-          blockExplorerUrls: ['https://arbiscan.io'],
+          chainId: chain.hex,
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls,
+          blockExplorerUrls: chain.blockExplorerUrls,
         }],
       })
     } else {
@@ -151,136 +189,156 @@ async function switchToArbitrum(): Promise<void> {
 }
 
 async function switchBackTo(chainId: string): Promise<void> {
-  // Best-effort switch back to the user's original chain after bridging.
-  // Silently ignores errors — the user can switch manually if needed.
   try {
     await window.ethereum!.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId }],
     })
   } catch {
-    // ignore
+    // The user can switch back manually.
   }
 }
 
-async function waitForReceipt(txHash: string, maxMs = 90_000): Promise<void> {
+async function waitForReceipt(txHash: string, maxMs = 120_000): Promise<void> {
   const deadline = Date.now() + maxMs
   while (Date.now() < deadline) {
     const receipt = await window.ethereum!.request({
       method: 'eth_getTransactionReceipt',
       params: [txHash],
-    })
-    if (receipt) return
+    }) as { status?: string } | null
+    if (receipt) {
+      if (receipt.status && receipt.status !== '0x1') {
+        throw new Error(`Transaction reverted: ${txHash}`)
+      }
+      return
+    }
     await new Promise(r => setTimeout(r, 2500))
   }
-  throw new Error('Timed out waiting for approval confirmation')
+  throw new Error('Timed out waiting for transaction confirmation')
 }
 
-async function sendMM(params: {
-  from: string
-  to:   string
-  data: string
-  value?: string
-}): Promise<string> {
-  const txParams: Record<string, string> = {
-    from: params.from,
-    to:   params.to,
-    data: params.data,
-  }
-  if (params.value && params.value !== '0') {
-    txParams.value = '0x' + BigInt(params.value).toString(16)
-  }
+async function sendMM(params: { from: string; to: string; data: string }): Promise<string> {
   return window.ethereum!.request({
     method: 'eth_sendTransaction',
-    params: [txParams],
+    params: [{ from: params.from, to: params.to, data: params.data }],
   }) as Promise<string>
 }
 
-// ─── Main execute flow ────────────────────────────────────────────────────────
-
-export interface BridgeResult {
-  approveTxHash: string
-  bridgeTxHash:  string
-  orderId:       string
-  estimation:    BridgeEstimation
+async function readAllowance(owner: string): Promise<bigint> {
+  const raw = await window.ethereum!.request({
+    method: 'eth_call',
+    params: [{
+      to: ARBITRUM_SOURCE.usdc,
+      data: encodeAllowance(owner, TOKEN_MESSENGER_V2),
+    }, 'latest'],
+  }) as string
+  return /^0x[0-9a-fA-F]+$/.test(raw) ? BigInt(raw) : 0n
 }
 
-/**
- * Execute the full bridge: switch network → approve USDC → submit bridge tx.
- * `onProgress` is called with status strings for UI feedback.
- */
-export async function executeBridge(
-  amount:          string,
-  senderEvm:       string,
-  recipientEvm:    string,
-  onProgress:      (msg: string) => void,
-): Promise<BridgeResult> {
-  const srcAmountBase = amountToBaseUnits(amount).toString()
+async function pollAttestation(
+  burnTxHash: string,
+): Promise<{ message: string; attestation: string }> {
+  const started = Date.now()
+  const timeoutMs = 30 * 60 * 1000
+  const url = `${ATTESTATION_API}/v2/messages/${ARBITRUM_SOURCE.domain}?transactionHash=${burnTxHash}`
 
-  // Remember the user's current chain so we can switch back after bridging.
-  const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
-
-  // 1. Fetch full calldata (with authority addresses).
-  onProgress('Fetching bridge calldata from DeBridge…')
-  const raw = await callDln({
-    srcChainId:                     ARBITRUM_ID.toString(),
-    srcChainTokenIn:                BRIDGE_SRC_TOKEN,
-    srcChainTokenInAmount:          srcAmountBase,
-    dstChainId:                     INJECTIVE_DLN.toString(),
-    dstChainTokenOut:               BRIDGE_DST_TOKEN,
-    dstChainTokenOutRecipient:      recipientEvm,
-    srcChainOrderAuthorityAddress:  senderEvm,
-    dstChainOrderAuthorityAddress:  recipientEvm,
-  })
-
-  if (!raw.tx?.to || !raw.tx?.data) {
-    throw new Error('DeBridge did not return transaction calldata')
-  }
-  const est = raw.estimation
-  if (!est) throw new Error('No estimation in DeBridge response')
-
-  const estimation: BridgeEstimation = {
-    srcAmount:     amount,
-    srcAmountBase,
-    dstAmount:     amountFromBaseUnits(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
-    dstAmountBase: est.dstChainTokenOut.amount,
-    protocolFee:   raw.protocolFee ?? '0',
-    fixFeeWei:     raw.fixFee ?? '1000000000000000',
+  while (Date.now() - started < timeoutMs) {
+    const res = await fetch(url).catch(() => null)
+    if (res?.ok) {
+      const data = await res.json() as {
+        messages?: Array<{ status?: string; message?: string; attestation?: string }>
+      }
+      const msg = data.messages?.[0]
+      if (msg?.status === 'complete' && msg.message && msg.attestation && msg.attestation !== 'PENDING') {
+        return { message: msg.message, attestation: msg.attestation }
+      }
+    }
+    await new Promise(r => setTimeout(r, 5000))
   }
 
-  // 2. Switch MetaMask to Arbitrum.
-  onProgress('Switching MetaMask to Arbitrum…')
-  await switchToArbitrum()
+  throw new Error('Circle attestation timed out after 30 minutes')
+}
 
-  // 3. Approve USDC to deBridge contract.
-  onProgress('Step 1 / 2 — Approve USDC (confirm in MetaMask)…')
-  const approveData     = encodeApprove(raw.tx.to, BigInt(srcAmountBase))
-  const approveTxHash   = await sendMM({
-    from: senderEvm,
-    to:   BRIDGE_SRC_TOKEN,
-    data: approveData,
-  })
-
-  // 4. Wait for approval to be mined (Arbitrum is fast ~1–2 s).
-  onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}…) — waiting for confirmation…`)
-  await waitForReceipt(approveTxHash)
-
-  // 5. Submit bridge tx with ETH fix fee.
-  onProgress('Step 2 / 2 — Bridge transaction (confirm in MetaMask)…')
-  const bridgeTxHash = await sendMM({
-    from:  senderEvm,
-    to:    raw.tx.to,
-    data:  raw.tx.data,
-    value: raw.tx.value ?? raw.fixFee,
-  })
-
-  // Switch back to the user's original chain after bridging.
-  await switchBackTo(originalChainId)
-
+export async function fetchBridgeQuote(
+  amount: string,
+  _recipientEvm: string,
+): Promise<BridgeEstimation> {
+  const srcAmountBase = amountToBaseUnits(amount)
   return {
-    approveTxHash,
-    bridgeTxHash,
-    orderId:    raw.orderId ?? '',
-    estimation,
+    srcAmount: amount,
+    srcAmountBase: srcAmountBase.toString(),
+    dstAmount: amountFromBaseUnits(srcAmountBase),
+    dstAmountBase: srcAmountBase.toString(),
+    protocolFee: '0',
+    fixFeeWei: '0',
+    route: `Circle CCTP V2 standard, ${ARBITRUM_SOURCE.shortName} to ${INJECTIVE_EVM.shortName}`,
+    sourceChainId: ARBITRUM_SOURCE.id,
+    sourceChain: ARBITRUM_SOURCE.shortName,
+  }
+}
+
+export async function executeBridge(
+  amount: string,
+  senderEvm: string,
+  recipientEvm: string,
+  onProgress: (msg: string) => void,
+): Promise<BridgeResult> {
+  assertEvmAddress(senderEvm, 'senderEvm')
+  assertEvmAddress(recipientEvm, 'recipientEvm')
+
+  const srcAmountBase = amountToBaseUnits(amount)
+  const estimation = await fetchBridgeQuote(amount, recipientEvm)
+  const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
+  let approveTxHash: string | null = null
+
+  try {
+    onProgress(`Switching MetaMask to ${ARBITRUM_SOURCE.shortName}...`)
+    await switchToChain(ARBITRUM_SOURCE)
+
+    onProgress(`Checking ${ARBITRUM_SOURCE.shortName} USDC allowance...`)
+    const allowance = await readAllowance(senderEvm)
+    if (allowance < srcAmountBase) {
+      onProgress('Step 1 / 3 - Approve USDC (confirm in MetaMask)...')
+      approveTxHash = await sendMM({
+        from: senderEvm,
+        to: ARBITRUM_SOURCE.usdc,
+        data: encodeApprove(TOKEN_MESSENGER_V2, srcAmountBase),
+      })
+      onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}...), waiting for confirmation...`)
+      await waitForReceipt(approveTxHash)
+    }
+
+    onProgress('Step 2 / 3 - Burn USDC with Circle CCTP (confirm in MetaMask)...')
+    const burnTxHash = await sendMM({
+      from: senderEvm,
+      to: TOKEN_MESSENGER_V2,
+      data: encodeDepositForBurn(srcAmountBase, recipientEvm),
+    })
+    onProgress(`Burn submitted (${burnTxHash.slice(0, 12)}...), waiting for confirmation...`)
+    await waitForReceipt(burnTxHash)
+
+    onProgress('Waiting for Circle attestation...')
+    const { message, attestation } = await pollAttestation(burnTxHash)
+
+    onProgress(`Switching MetaMask to ${INJECTIVE_EVM.shortName} EVM...`)
+    await switchToChain(INJECTIVE_EVM)
+
+    onProgress('Step 3 / 3 - Mint native USDC on Injective (confirm in MetaMask)...')
+    const mintTxHash = await sendMM({
+      from: senderEvm,
+      to: MESSAGE_TRANSMITTER_V2,
+      data: encodeReceiveMessage(message, attestation),
+    })
+    onProgress(`Mint submitted (${mintTxHash.slice(0, 12)}...), waiting for confirmation...`)
+    await waitForReceipt(mintTxHash, 180_000)
+
+    return {
+      approveTxHash,
+      burnTxHash,
+      mintTxHash,
+      estimation,
+    }
+  } finally {
+    await switchBackTo(originalChainId)
   }
 }
