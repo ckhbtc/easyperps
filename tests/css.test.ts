@@ -35,3 +35,12 @@ describe('chat text wrapping CSS', () => {
     assert.match(quickButton, /overflow-wrap:\s*normal;/)
   })
 })
+
+describe('tooltip CSS', () => {
+  it('keeps tooltip text readable against the tooltip background', () => {
+    const tooltip = ruleBody('[data-tooltip]::after')
+
+    assert.match(tooltip, /background:\s*var\(--bg\);/)
+    assert.doesNotMatch(tooltip, /color:\s*var\(--text\);/)
+  })
+})
