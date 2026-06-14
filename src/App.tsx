@@ -419,10 +419,10 @@ function LandingScreen({ connecting, onConnect }: { connecting: boolean; onConne
         <span className="sticker sticker-blue">INJECTIVE MAINNET</span>
         <p className="landing-eyebrow">Welcome to</p>
         <h1 id="landing-title">EASYPERPS</h1>
-        <p className="landing-subtitle">AUTO MALL</p>
+        <p className="landing-subtitle">RFQ PERPS</p>
         <p className="landing-copy">
           Type the trade, confirm the deal, sign from MetaMask. RFQ quotes, native USDC markets,
-          and CCTP bridge support are packed into one very unreasonable showroom.
+          and CCTP bridge support are packed into one very unreasonable trading desk.
         </p>
         <button className="btn btn-connect landing-connect" onClick={onConnect} disabled={connecting}>
           {connecting ? 'CONNECTING...' : 'CONNECT WALLET NOW'}
@@ -990,7 +990,7 @@ export default function App() {
         <div className="header-left">
           <DealerLogo />
           <span className="network-badge">Mainnet</span>
-          <span className="powered-by">Auto Mall · Powered by Injective</span>
+          <span className="powered-by">Powered by Injective</span>
         </div>
 
         <div className="header-right">
@@ -1053,7 +1053,7 @@ export default function App() {
       {wallet ? (
         <div className="dealer-workspace">
           <section className="chat-panel">
-            <div className="chat-strip">EASYPERPS AGENT - AUTO MALL MODE</div>
+            <div className="chat-strip">EASYPERPS AGENT</div>
             <span className="chat-sticker chat-sticker-rfq">RFQ POWERED</span>
             <span className="chat-sticker chat-sticker-backend">NO BACKEND</span>
 

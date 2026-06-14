@@ -2395,7 +2395,7 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DEALER FEVER DREAM OVERHAUL
-   Direction C from the EasyPerps Auto Mall handoff.
+   Direction C from the EasyPerps design handoff.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @keyframes dealer-marquee {
@@ -2907,7 +2907,7 @@
 }
 
 .dealer-mode .msg-agent .msg-text::before {
-  content: 'EASYPERPS AGENT - AUTO MALL MODE';
+  content: 'EASYPERPS AGENT';
   display: block;
   margin: 0 -14px 12px;
   padding: 5px 10px;
