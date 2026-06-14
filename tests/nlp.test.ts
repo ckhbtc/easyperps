@@ -39,13 +39,24 @@ describe('parse', () => {
   })
 
   it('parses bridge commands with the requested amount', () => {
-    const result = parse('bridge $100.50 from Arbitrum')
+    const result = parse('bridge 100.50 USDC from Arbitrum')
 
     assert.equal(result.intent.kind, 'bridge')
     if (result.intent.kind !== 'bridge') assert.fail('expected bridge intent')
     assert.equal(result.intent.amount, 100.5)
+    assert.equal(result.intent.source, 'arbitrum')
     assert.deepEqual(result.missing, [])
     assert.equal(result.summary, 'Bridge $100.5 USDC from Arbitrum to Injective native USDC')
+  })
+
+  it('parses bridge source aliases', () => {
+    const result = parse('bridge $25 from op')
+
+    assert.equal(result.intent.kind, 'bridge')
+    if (result.intent.kind !== 'bridge') assert.fail('expected bridge intent')
+    assert.equal(result.intent.amount, 25)
+    assert.equal(result.intent.source, 'optimism')
+    assert.equal(result.summary, 'Bridge $25 USDC from Optimism to Injective native USDC')
   })
 
   it('asks for a bridge amount when missing', () => {

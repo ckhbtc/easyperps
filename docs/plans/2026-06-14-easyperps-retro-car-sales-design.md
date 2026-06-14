@@ -191,7 +191,7 @@ Bridge should feel like a finance office or checkout counter.
 Suggested labels:
 
 - `TRADE-IN FUNDS`
-- `FROM: ARBITRUM USDC`
+- `FROM: ARBITRUM / BASE / OP / ETH / POLYGON / AVAX USDC`
 - `TO: INJECTIVE USDC`
 - `GET BRIDGE QUOTE`
 - `SEND IT`

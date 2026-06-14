@@ -1,5 +1,5 @@
 /**
- * Circle CCTP V2 inbound bridge: Arbitrum USDC to native Injective USDC.
+ * Circle CCTP V2 inbound bridge: source-chain USDC to native Injective USDC.
  *
  * EasyPerps is a static SPA, so the user submits both source-chain burn and
  * destination-chain mint transactions from MetaMask. The mint side is
@@ -38,7 +38,16 @@ interface BridgeChain {
   blockExplorerUrls: string[]
 }
 
-interface BridgeSourceChain extends BridgeChain {
+export type BridgeSourceSlug =
+  | 'arbitrum'
+  | 'base'
+  | 'optimism'
+  | 'ethereum'
+  | 'polygon'
+  | 'avalanche'
+
+export interface BridgeSourceChain extends BridgeChain {
+  slug: BridgeSourceSlug
   usdc: string
 }
 
@@ -46,6 +55,7 @@ export const ARBITRUM_SOURCE: BridgeSourceChain = {
   id: 42161,
   hex: '0xa4b1',
   domain: 3,
+  slug: 'arbitrum',
   name: 'Arbitrum One',
   shortName: 'Arbitrum',
   nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
@@ -53,6 +63,70 @@ export const ARBITRUM_SOURCE: BridgeSourceChain = {
   blockExplorerUrls: ['https://arbiscan.io'],
   usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
 }
+
+export const SOURCE_CHAINS: BridgeSourceChain[] = [
+  ARBITRUM_SOURCE,
+  {
+    id: 8453,
+    hex: '0x2105',
+    domain: 6,
+    slug: 'base',
+    name: 'Base',
+    shortName: 'Base',
+    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://base-rpc.publicnode.com', 'https://mainnet.base.org', 'https://base.drpc.org'],
+    blockExplorerUrls: ['https://basescan.org'],
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  },
+  {
+    id: 10,
+    hex: '0xa',
+    domain: 2,
+    slug: 'optimism',
+    name: 'OP Mainnet',
+    shortName: 'Optimism',
+    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://optimism-rpc.publicnode.com', 'https://mainnet.optimism.io', 'https://optimism.drpc.org'],
+    blockExplorerUrls: ['https://optimistic.etherscan.io'],
+    usdc: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  },
+  {
+    id: 1,
+    hex: '0x1',
+    domain: 0,
+    slug: 'ethereum',
+    name: 'Ethereum',
+    shortName: 'Ethereum',
+    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://ethereum-rpc.publicnode.com', 'https://eth.llamarpc.com', 'https://eth.drpc.org', 'https://rpc.ankr.com/eth'],
+    blockExplorerUrls: ['https://etherscan.io'],
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  },
+  {
+    id: 137,
+    hex: '0x89',
+    domain: 7,
+    slug: 'polygon',
+    name: 'Polygon',
+    shortName: 'Polygon',
+    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+    rpcUrls: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon-rpc.com', 'https://polygon.drpc.org'],
+    blockExplorerUrls: ['https://polygonscan.com'],
+    usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+  },
+  {
+    id: 43114,
+    hex: '0xa86a',
+    domain: 1,
+    slug: 'avalanche',
+    name: 'Avalanche C-Chain',
+    shortName: 'Avalanche',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: ['https://avalanche-c-chain-rpc.publicnode.com', 'https://api.avax.network/ext/bc/C/rpc', 'https://avalanche.drpc.org'],
+    blockExplorerUrls: ['https://snowtrace.io'],
+    usdc: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+  },
+]
 
 export const INJECTIVE_EVM: BridgeChain = {
   id: 1776,
@@ -68,6 +142,20 @@ export const INJECTIVE_EVM: BridgeChain = {
 export const BRIDGE_SRC_TOKEN = ARBITRUM_SOURCE.usdc
 export const BRIDGE_DST_TOKEN = NATIVE_USDC_EVM_ADDRESS
 export const MAX_BRIDGE_USDC = 100_000
+export const DEFAULT_SOURCE_CHAIN_ID = ARBITRUM_SOURCE.id
+
+const SOURCE_ALIASES: Record<string, BridgeSourceSlug> = {
+  arb: 'arbitrum',
+  'arbitrum-one': 'arbitrum',
+  eth: 'ethereum',
+  mainnet: 'ethereum',
+  op: 'optimism',
+  'op-mainnet': 'optimism',
+  matic: 'polygon',
+  poly: 'polygon',
+  avax: 'avalanche',
+  'avalanche-c-chain': 'avalanche',
+}
 
 export interface BridgeEstimation {
   srcAmount: string
@@ -122,6 +210,26 @@ export function isValidBridgeAmount(amount: string): boolean {
   }
 }
 
+export function getBridgeSourceChain(source?: string | number): BridgeSourceChain {
+  if (source === undefined || source === null || source === '') {
+    return SOURCE_CHAINS.find(chain => chain.id === DEFAULT_SOURCE_CHAIN_ID) ?? ARBITRUM_SOURCE
+  }
+
+  if (typeof source === 'number' || /^\d+$/.test(String(source).trim())) {
+    const chainId = Number(source)
+    const found = SOURCE_CHAINS.find(chain => chain.id === chainId)
+    if (found) return found
+    throw new Error(`Unsupported bridge source chain: ${source}`)
+  }
+
+  const normalized = String(source).trim().toLowerCase().replace(/[\s_]+/g, '-')
+  const slug = SOURCE_ALIASES[normalized] ?? normalized
+  const found = SOURCE_CHAINS.find(chain => chain.slug === slug)
+  if (found) return found
+
+  throw new Error(`Unsupported bridge source network: ${source}`)
+}
+
 function assertEvmAddress(address: string, label: string): void {
   if (!EVM_ADDRESS_RE.test(address)) {
     throw new Error(`${label} must be a 0x EVM address`)
@@ -144,13 +252,13 @@ function encodeAllowance(owner: string, spender: string): string {
   return `${ALLOWANCE_SIG}${padAddress(owner)}${padAddress(spender)}`
 }
 
-function encodeDepositForBurn(amount: bigint, recipientEvm: string): string {
+function encodeDepositForBurn(amount: bigint, recipientEvm: string, source: BridgeSourceChain): string {
   return [
     DEPOSIT_FOR_BURN_SIG,
     padUint(amount),
     padUint(INJECTIVE_EVM.domain),
     padAddress(recipientEvm),
-    padAddress(ARBITRUM_SOURCE.usdc),
+    padAddress(source.usdc),
     ZERO_BYTES32,
     padUint(STANDARD_MAX_FEE),
     padUint(STANDARD_FINALITY),
@@ -224,11 +332,11 @@ async function sendMM(params: { from: string; to: string; data: string }): Promi
   }) as Promise<string>
 }
 
-async function readAllowance(owner: string): Promise<bigint> {
+async function readAllowance(owner: string, source: BridgeSourceChain): Promise<bigint> {
   const raw = await window.ethereum!.request({
     method: 'eth_call',
     params: [{
-      to: ARBITRUM_SOURCE.usdc,
+      to: source.usdc,
       data: encodeAllowance(owner, TOKEN_MESSENGER_V2),
     }, 'latest'],
   }) as string
@@ -236,11 +344,12 @@ async function readAllowance(owner: string): Promise<bigint> {
 }
 
 async function pollAttestation(
+  source: BridgeSourceChain,
   burnTxHash: string,
 ): Promise<{ message: string; attestation: string }> {
   const started = Date.now()
   const timeoutMs = 30 * 60 * 1000
-  const url = `${ATTESTATION_API}/v2/messages/${ARBITRUM_SOURCE.domain}?transactionHash=${burnTxHash}`
+  const url = `${ATTESTATION_API}/v2/messages/${source.domain}?transactionHash=${burnTxHash}`
 
   while (Date.now() - started < timeoutMs) {
     const res = await fetch(url).catch(() => null)
@@ -262,8 +371,10 @@ async function pollAttestation(
 export async function fetchBridgeQuote(
   amount: string,
   recipientEvm: string,
+  sourceChain: string | number = DEFAULT_SOURCE_CHAIN_ID,
 ): Promise<BridgeEstimation> {
   void recipientEvm
+  const source = getBridgeSourceChain(sourceChain)
   const srcAmountBase = amountToBaseUnits(amount)
   return {
     srcAmount: amount,
@@ -272,9 +383,9 @@ export async function fetchBridgeQuote(
     dstAmountBase: srcAmountBase.toString(),
     protocolFee: '0',
     fixFeeWei: '0',
-    route: `Circle CCTP V2 standard, ${ARBITRUM_SOURCE.shortName} to ${INJECTIVE_EVM.shortName}`,
-    sourceChainId: ARBITRUM_SOURCE.id,
-    sourceChain: ARBITRUM_SOURCE.shortName,
+    route: `Circle CCTP V2 standard, ${source.shortName} to ${INJECTIVE_EVM.shortName}`,
+    sourceChainId: source.id,
+    sourceChain: source.shortName,
   }
 }
 
@@ -283,26 +394,28 @@ export async function executeBridge(
   senderEvm: string,
   recipientEvm: string,
   onProgress: (msg: string) => void,
+  sourceChain: string | number = DEFAULT_SOURCE_CHAIN_ID,
 ): Promise<BridgeResult> {
   assertEvmAddress(senderEvm, 'senderEvm')
   assertEvmAddress(recipientEvm, 'recipientEvm')
 
+  const source = getBridgeSourceChain(sourceChain)
   const srcAmountBase = amountToBaseUnits(amount)
-  const estimation = await fetchBridgeQuote(amount, recipientEvm)
+  const estimation = await fetchBridgeQuote(amount, recipientEvm, source.id)
   const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
   let approveTxHash: string | null = null
 
   try {
-    onProgress(`Switching MetaMask to ${ARBITRUM_SOURCE.shortName}...`)
-    await switchToChain(ARBITRUM_SOURCE)
+    onProgress(`Switching MetaMask to ${source.shortName}...`)
+    await switchToChain(source)
 
-    onProgress(`Checking ${ARBITRUM_SOURCE.shortName} USDC allowance...`)
-    const allowance = await readAllowance(senderEvm)
+    onProgress(`Checking ${source.shortName} USDC allowance...`)
+    const allowance = await readAllowance(senderEvm, source)
     if (allowance < srcAmountBase) {
       onProgress('Step 1 / 3 - Approve USDC (confirm in MetaMask)...')
       approveTxHash = await sendMM({
         from: senderEvm,
-        to: ARBITRUM_SOURCE.usdc,
+        to: source.usdc,
         data: encodeApprove(TOKEN_MESSENGER_V2, srcAmountBase),
       })
       onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}...), waiting for confirmation...`)
@@ -313,13 +426,13 @@ export async function executeBridge(
     const burnTxHash = await sendMM({
       from: senderEvm,
       to: TOKEN_MESSENGER_V2,
-      data: encodeDepositForBurn(srcAmountBase, recipientEvm),
+      data: encodeDepositForBurn(srcAmountBase, recipientEvm, source),
     })
     onProgress(`Burn submitted (${burnTxHash.slice(0, 12)}...), waiting for confirmation...`)
     await waitForReceipt(burnTxHash)
 
     onProgress('Waiting for Circle attestation...')
-    const { message, attestation } = await pollAttestation(burnTxHash)
+    const { message, attestation } = await pollAttestation(source, burnTxHash)
 
     onProgress(`Switching MetaMask to ${INJECTIVE_EVM.shortName} EVM...`)
     await switchToChain(INJECTIVE_EVM)

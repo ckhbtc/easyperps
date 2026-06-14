@@ -2,10 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   ARBITRUM_SOURCE,
+  DEFAULT_SOURCE_CHAIN_ID,
   MAX_BRIDGE_USDC,
+  SOURCE_CHAINS,
   amountFromBaseUnits,
   amountToBaseUnits,
   fetchBridgeQuote,
+  getBridgeSourceChain,
   isValidBridgeAmount,
 } from '../src/bridge.js'
 
@@ -48,7 +51,28 @@ describe('isValidBridgeAmount', () => {
 })
 
 describe('CCTP bridge quote', () => {
-  it('quotes Arbitrum USDC to native Injective USDC one for one', async () => {
+  it('lists all supported CCTP source chains from the reference apps', () => {
+    assert.deepEqual(SOURCE_CHAINS.map(chain => chain.slug), [
+      'arbitrum',
+      'base',
+      'optimism',
+      'ethereum',
+      'polygon',
+      'avalanche',
+    ])
+    assert.equal(DEFAULT_SOURCE_CHAIN_ID, ARBITRUM_SOURCE.id)
+  })
+
+  it('resolves CCTP source networks by slug, alias, and chain id', () => {
+    assert.equal(getBridgeSourceChain('base').id, 8453)
+    assert.equal(getBridgeSourceChain('op').id, 10)
+    assert.equal(getBridgeSourceChain('eth').id, 1)
+    assert.equal(getBridgeSourceChain('matic').id, 137)
+    assert.equal(getBridgeSourceChain('avax').id, 43114)
+    assert.equal(getBridgeSourceChain(42161).slug, 'arbitrum')
+  })
+
+  it('quotes selected source USDC to native Injective USDC one for one', async () => {
     const quote = await fetchBridgeQuote('10.5', '0x1111111111111111111111111111111111111111')
 
     assert.equal(quote.sourceChainId, ARBITRUM_SOURCE.id)
@@ -59,5 +83,18 @@ describe('CCTP bridge quote', () => {
     assert.equal(quote.protocolFee, '0')
     assert.equal(quote.fixFeeWei, '0')
     assert.match(quote.route, /Circle CCTP V2 standard/)
+  })
+
+  it('quotes non-Arbitrum source networks', async () => {
+    const quote = await fetchBridgeQuote(
+      '25',
+      '0x1111111111111111111111111111111111111111',
+      'base',
+    )
+
+    assert.equal(quote.sourceChainId, 8453)
+    assert.equal(quote.sourceChain, 'Base')
+    assert.equal(quote.dstAmount, '25')
+    assert.match(quote.route, /Base to Injective/)
   })
 })

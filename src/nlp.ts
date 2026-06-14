@@ -21,8 +21,16 @@ export type ParsedIntent =
   | { kind: 'positions' }
   | { kind: 'markets' }
   | { kind: 'price'; symbol: string }
-  | { kind: 'bridge'; amount: number }
+  | { kind: 'bridge'; amount: number; source?: BridgeSourceSlug }
   | { kind: 'unknown' }
+
+export type BridgeSourceSlug =
+  | 'arbitrum'
+  | 'base'
+  | 'optimism'
+  | 'ethereum'
+  | 'polygon'
+  | 'avalanche'
 
 export interface ParseResult {
   intent: ParsedIntent
@@ -64,13 +72,48 @@ const SIDE_PATTERNS = {
 const LEVERAGE_PATTERN = /(?:^|\s)(?:w(?:ith)?\s+)?(\d+(?:\.\d+)?)\s*[xX×]|\b[xX×]\s*(\d+(?:\.\d+)?)|\blev(?:erage)?\s+(\d+(?:\.\d+)?)/i
 
 const AMOUNT_PATTERN =
-  /\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:usdt?|usd|dollars?|\$)|(\d+(?:\.\d+)?)\s+(?:of\s+)?(?:usdt?|usd|dollars?)/i
+  /\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:usdc|usdt?|usd|dollars?|\$)|(\d+(?:\.\d+)?)\s+(?:of\s+)?(?:usdc|usdt?|usd|dollars?)/i
 
 // All token symbols — broad list including short aliases
 const TOKEN_IN_TEXT_PATTERN =
   /\b(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)\b/i
 
 const BRIDGE_PATTERN = /\b(bridge|deposit|fund)\b/i
+
+const BRIDGE_SOURCE_LABELS: Record<BridgeSourceSlug, string> = {
+  arbitrum: 'Arbitrum',
+  base: 'Base',
+  optimism: 'Optimism',
+  ethereum: 'Ethereum',
+  polygon: 'Polygon',
+  avalanche: 'Avalanche',
+}
+
+const BRIDGE_SOURCE_ALIASES: Record<string, BridgeSourceSlug> = {
+  arbitrum: 'arbitrum',
+  arb: 'arbitrum',
+  'arbitrum-one': 'arbitrum',
+  base: 'base',
+  optimism: 'optimism',
+  op: 'optimism',
+  'op-mainnet': 'optimism',
+  ethereum: 'ethereum',
+  eth: 'ethereum',
+  mainnet: 'ethereum',
+  polygon: 'polygon',
+  matic: 'polygon',
+  poly: 'polygon',
+  avalanche: 'avalanche',
+  avax: 'avalanche',
+  'avalanche-c-chain': 'avalanche',
+}
+
+function parseBridgeSource(text: string): BridgeSourceSlug | undefined {
+  const match = /\b(?:from|on|via)\s+([a-z][a-z0-9_-]*)\b/i.exec(text)
+  if (!match) return undefined
+  const normalized = match[1].toLowerCase().replace(/[\s_]+/g, '-')
+  return BRIDGE_SOURCE_ALIASES[normalized]
+}
 
 const CLOSE_PATTERN = /\b(close|exit|flatten|get out of|dump my|sell all)\b/i
 
@@ -114,11 +157,13 @@ export function parse(input: string): ParseResult {
     const amountMatch = AMOUNT_PATTERN.exec(text)
     const amountStr = amountMatch?.[1] ?? amountMatch?.[2] ?? amountMatch?.[3] ?? ''
     const amount = amountStr ? parseFloat(amountStr) : 0
+    const source = parseBridgeSource(text) ?? 'arbitrum'
+    const sourceLabel = BRIDGE_SOURCE_LABELS[source]
     const missing = amount > 0 ? [] : ['how much to bridge? (e.g. $10 or 50 USDC)']
     return {
-      intent: { kind: 'bridge', amount },
+      intent: { kind: 'bridge', amount, source },
       missing,
-      summary: amount > 0 ? `Bridge $${amount} USDC from Arbitrum to Injective native USDC` : undefined,
+      summary: amount > 0 ? `Bridge $${amount} USDC from ${sourceLabel} to Injective native USDC` : undefined,
     }
   }
 

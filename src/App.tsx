@@ -7,7 +7,15 @@ import { getMarketPrice, getBalances, getPositions, resolveMarket, listMarkets }
 import type { PositionInfo, BalanceInfo, PerpMarket } from './injective'
 import { openTrade, closeTrade } from './tx'
 import { enableAutoSign, disableAutoSign, isAutoSignActive } from './autosign'
-import { fetchBridgeQuote, executeBridge, isValidBridgeAmount, MAX_BRIDGE_USDC } from './bridge'
+import {
+  DEFAULT_SOURCE_CHAIN_ID,
+  SOURCE_CHAINS,
+  executeBridge,
+  fetchBridgeQuote,
+  getBridgeSourceChain,
+  isValidBridgeAmount,
+  MAX_BRIDGE_USDC,
+} from './bridge'
 import type { BridgeEstimation } from './bridge'
 import { Decimal } from 'decimal.js'
 import { startAppVersionMonitor } from './version'
@@ -235,12 +243,14 @@ interface BridgeModalProps {
   senderEvm:     string
   recipientEvm:  string
   initialAmount?: string
+  initialSource?: string
   onClose:       () => void
   onStatus:      (msg: string) => void
 }
 
-function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, onStatus }: BridgeModalProps) {
+function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSource = 'arbitrum', onClose, onStatus }: BridgeModalProps) {
   const [amount, setAmount]       = useState(initialAmount)
+  const [sourceId, setSourceId]   = useState(() => getBridgeSourceChain(initialSource).id)
   const [quote, setQuote]         = useState<BridgeEstimation | null>(null)
   const [quoting, setQuoting]     = useState(false)
   const [bridging, setBridging]   = useState(false)
@@ -249,11 +259,13 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
 
   useEffect(() => {
     setAmount(initialAmount)
+    setSourceId(getBridgeSourceChain(initialSource).id)
     setQuote(null)
     setStep('')
     setError('')
-  }, [initialAmount])
+  }, [initialAmount, initialSource])
 
+  const source = getBridgeSourceChain(sourceId)
   const validAmount = isValidBridgeAmount(amount)
 
   async function handleQuote() {
@@ -263,7 +275,7 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
     }
     setQuoting(true); setError(''); setQuote(null)
     try {
-      const q = await fetchBridgeQuote(amount, recipientEvm)
+      const q = await fetchBridgeQuote(amount, recipientEvm, source.id)
       setQuote(q)
     } catch (e) {
       setError((e as Error).message)
@@ -282,7 +294,7 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', onClose, o
       const result = await executeBridge(amount, senderEvm, recipientEvm, msg => {
         setStep(msg)
         onStatus(msg)
-      })
+      }, source.id)
       const approveLine = result.approveTxHash
         ? `Approve tx: ${result.approveTxHash}`
         : 'Approve tx: skipped, allowance already set'
@@ -311,7 +323,21 @@ Mint tx:    ${result.mintTxHash}`)
         <div className="bridge-row">
           <label className="bridge-label">From</label>
           <div className="bridge-chain-row">
-            <span className="bridge-chain">Arbitrum</span>
+            <select
+              className="bridge-chain bridge-chain-select"
+              value={sourceId}
+              disabled={quoting || bridging}
+              onChange={e => {
+                setSourceId(Number(e.target.value))
+                setQuote(null)
+                setStep('')
+                setError('')
+              }}
+            >
+              {SOURCE_CHAINS.map(chain => (
+                <option key={chain.id} value={chain.id}>{chain.shortName}</option>
+              ))}
+            </select>
             <span className="bridge-token">USDC</span>
           </div>
         </div>
@@ -386,7 +412,7 @@ Mint tx:    ${result.mintTxHash}`)
         </div>
 
         <p className="bridge-note">
-          Needs ETH on Arbitrum for burn gas and INJ on Injective EVM for mint gas.
+          Needs {source.nativeCurrency.symbol} on {source.shortName} for burn gas and INJ on Injective EVM for mint gas.
           Circle attestation usually takes a few minutes.
         </p>
       </div>
@@ -407,6 +433,7 @@ export default function App() {
   const [yolo, setYolo] = useState(false)
   const [bridgeOpen, setBridgeOpen] = useState(false)
   const [bridgeInitialAmount, setBridgeInitialAmount] = useState('10')
+  const [bridgeInitialSource, setBridgeInitialSource] = useState(() => getBridgeSourceChain(DEFAULT_SOURCE_CHAIN_ID).slug)
   const [messages, setMessages] = useState<Message[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -479,8 +506,9 @@ export default function App() {
     setPendingClarification(null)
   }
 
-  function openBridge(amount?: number) {
+  function openBridge(amount?: number, source?: string) {
     setBridgeInitialAmount(amount && amount > 0 ? String(amount) : '10')
+    setBridgeInitialSource(getBridgeSourceChain(source ?? DEFAULT_SOURCE_CHAIN_ID).slug)
     setBridgeOpen(true)
   }
 
@@ -692,7 +720,7 @@ export default function App() {
       case 'trade': await handleTradeIntent(intent); break
       case 'close': await handleCloseIntent(intent); break
       case 'bridge': {
-        openBridge(intent.amount)
+        openBridge(intent.amount, intent.source)
         break
       }
     }
@@ -947,7 +975,7 @@ export default function App() {
               <button
                 className="btn-bridge"
                 onClick={() => openBridge()}
-                data-tooltip="Bridge funds from Arbitrum to Injective"
+                data-tooltip="Bridge native USDC from supported CCTP sources"
               >
                 🌉
               </button>
@@ -1014,6 +1042,7 @@ export default function App() {
           senderEvm={wallet.ethAddress}
           recipientEvm={wallet.ethAddress}
           initialAmount={bridgeInitialAmount}
+          initialSource={bridgeInitialSource}
           onClose={() => setBridgeOpen(false)}
           onStatus={msg => setMessages(prev => [...prev, systemMsg(msg)])}
         />

@@ -7,7 +7,7 @@ Type what you want. Confirm. Sign. Done.
 ```
 > long 10 INJ with 5x leverage
 > close my BTC position
-> bridge 100 USDC from arbitrum
+> bridge 100 USDC from base
 > show positions
 ```
 
@@ -18,7 +18,7 @@ Live at **[easyperps.com](https://easyperps.com)**.
 - **MetaMask-native trading.** Connect MetaMask, sign trades with EIP-712 — no separate wallet, no seed phrase to manage.
 - **Natural-language intent.** Type a trade in plain English; the parser extracts side, symbol, notional, and leverage. Always confirms before signing.
 - **AuthZ auto-sign sessions.** Generate an ephemeral key, grant it a scoped trading authorization on-chain, then trade for the rest of the session without per-trade MetaMask popups. Auto-revokes on expiry.
-- **Native USDC bridging.** Bridge Arbitrum USDC into native Injective USDC via Circle CCTP V2. The app burns on Arbitrum, waits for Circle attestation, then mints on Injective EVM from MetaMask.
+- **Native USDC bridging.** Bridge USDC into native Injective USDC via Circle CCTP V2 from Arbitrum, Base, Optimism, Ethereum, Polygon, or Avalanche. The app burns on the source chain, waits for Circle attestation, then mints on Injective EVM from MetaMask.
 - **Read-only by default.** Markets, prices, balances, and positions all load without signing anything.
 
 ## Stack
@@ -53,7 +53,7 @@ src/
 ├── injective.ts     # read-only chain queries (markets, prices, positions, balances)
 ├── tx.ts            # EIP-712 signing + Injective tx broadcast
 ├── autosign.ts      # AuthZ session-key flow (grant, broadcast, revoke)
-└── bridge.ts        # Circle CCTP V2: Arbitrum USDC → native Injective USDC
+└── bridge.ts        # Circle CCTP V2: source-chain USDC → native Injective USDC
 ```
 
 ## Caveats
