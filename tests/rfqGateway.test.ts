@@ -179,4 +179,75 @@ describe('RFQ gateway', () => {
     assert.equal(result.quotesAccepted, 1)
     assert.equal(result.status, 'confirmed')
   })
+
+  it('emits matched progress before broadcast and returns pending confirmation', async () => {
+    const { privateKey } = PrivateKey.generate()
+    const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())
+    const feePayerPubKey = new Uint8Array(33)
+    feePayerPubKey[0] = 2
+    feePayerPubKey[32] = 9
+    const txRaw = makePreparedTxRaw({
+      autosignPubKey,
+      feePayerPubKey,
+      autosignIndex: 0,
+    })
+    const prepared = makePreparedAutoSign(CosmosTxV1Beta1TxPb.TxRaw.toBinary(txRaw))
+    prepared.feePayerPubKey = { key: uint8ArrayToBase64(feePayerPubKey), type: 'secp256k1' }
+    const session: AutoSignSession = {
+      privateKeyHex: privateKey.toPrivateKeyHex(),
+      granteeAddress: privateKey.toBech32(),
+      granterAddress: 'inj1granter',
+      expiration: 4_070_908_800,
+      evmChainId: 1776,
+      scopeVersion: 2,
+    }
+    const phases: string[] = []
+    let broadcastStarted = false
+    let matchedBeforeBroadcast = false
+    let resolveConfirmation!: (value: { txHash: string; code: number }) => void
+    const pendingConfirmation = new Promise<{ txHash: string; code: number }>(resolve => {
+      resolveConfirmation = resolve
+    })
+
+    const result = await executeRfqGatewayAutoSign({
+      session,
+      marketId: '0xmarket',
+      accountDetails: null,
+      input: {
+        direction: 'long',
+        margin: '5',
+        quantity: '1',
+        worstPrice: '11',
+      },
+      waitForConfirmation: false,
+      gatewayApi: {
+        async fetchPrepareAutoSign() {
+          return prepared
+        },
+      },
+      txApiClient: {
+        async broadcast() {
+          broadcastStarted = true
+          assert.equal(matchedBeforeBroadcast, true)
+          return { txHash: 'ABC', code: 0 }
+        },
+        async fetchTxPoll(txHash) {
+          const confirmed = await pendingConfirmation
+          return { txHash, code: confirmed.code }
+        },
+      },
+      onProgress(_message, event) {
+        if (!event) return
+        phases.push(event.phase)
+        if (event.phase === 'matched' && !broadcastStarted) matchedBeforeBroadcast = true
+      },
+    })
+
+    assert.deepEqual(phases.slice(0, 3), ['preparing', 'matching', 'matched'])
+    assert.equal(result.status, 'matched')
+    assert.equal(result.settlementPending, true)
+    assert.ok(result.confirmation)
+    resolveConfirmation({ txHash: 'ABC', code: 0 })
+    assert.equal((await result.confirmation).txHash, 'ABC')
+  })
 })

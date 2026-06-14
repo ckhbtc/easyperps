@@ -7,7 +7,7 @@
  *  3. Build canonical RFQ input using human price, margin, quantity, and guardrail price.
  *  4. Ask the RFQ gateway to match quotes and prepare a fee-paid settlement tx.
  *  5. Sign only the autosign signer slot locally, preserve the fee-payer signature,
- *     broadcast, and poll for confirmation.
+ *     broadcast, and return a pending confirmation promise for optimistic UI.
  */
 
 import { IndexerGrpcOracleApi } from '@injectivelabs/sdk-ts'
@@ -17,6 +17,7 @@ import type { PerpMarket } from './injective'
 import { getAutoSignSession } from './autosign.js'
 import { buildRfqCloseInput, buildRfqOpenInput } from './rfq.js'
 import { executeRfqGatewayAutoSign } from './rfqGateway.js'
+import type { RfqGatewayConfirmationResult, RfqGatewayProgressCallback } from './rfqGateway.js'
 
 const NETWORK = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
@@ -52,7 +53,7 @@ export interface OpenTradeParams {
   notionalUsdc: number
   leverage: number
   slippage?: number
-  onProgress?: (msg: string) => void
+  onProgress?: RfqGatewayProgressCallback
 }
 
 export interface TxResult {
@@ -60,6 +61,9 @@ export interface TxResult {
   rfqId?: number
   quotesAccepted?: number
   bestPrice?: string | null
+  status?: 'matched' | 'confirmed'
+  settlementPending?: boolean
+  confirmation?: Promise<RfqGatewayConfirmationResult>
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
@@ -89,6 +93,7 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     marketId: market.marketId,
     input,
     onProgress,
+    waitForConfirmation: false,
   })
 
   return {
@@ -96,6 +101,9 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     rfqId: result.rfqId,
     quotesAccepted: result.quotesAccepted,
     bestPrice: result.bestPrice,
+    status: result.status,
+    settlementPending: result.settlementPending,
+    confirmation: result.confirmation,
   }
 }
 
@@ -106,7 +114,7 @@ export interface CloseTradeParams {
   side: 'long' | 'short'
   quantity: string
   slippage?: number
-  onProgress?: (msg: string) => void
+  onProgress?: RfqGatewayProgressCallback
 }
 
 export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
@@ -131,6 +139,7 @@ export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
     marketId: market.marketId,
     input,
     onProgress,
+    waitForConfirmation: false,
   })
 
   return {
@@ -138,5 +147,8 @@ export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
     rfqId: result.rfqId,
     quotesAccepted: result.quotesAccepted,
     bestPrice: result.bestPrice,
+    status: result.status,
+    settlementPending: result.settlementPending,
+    confirmation: result.confirmation,
   }
 }

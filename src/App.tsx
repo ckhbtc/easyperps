@@ -6,6 +6,8 @@ import type { ParsedIntent, PendingIntent } from './nlp'
 import { getMarketPrice, getBalances, getPositions, resolveMarket, listMarkets } from './injective'
 import type { PositionInfo, BalanceInfo, PerpMarket } from './injective'
 import { openTrade, closeTrade } from './tx'
+import type { TxResult } from './tx'
+import type { RfqGatewayProgressEvent } from './rfqGateway'
 import { enableAutoSign, disableAutoSign, isAutoSignActive } from './autosign'
 import {
   DEFAULT_SOURCE_CHAIN_ID,
@@ -70,6 +72,7 @@ const RFQ_STATUS_PREFIXES = [
   'Signing RFQ',
   'Broadcasting RFQ',
   'RFQ matched',
+  'RFQ settlement',
 ]
 
 const QUICK_COMMANDS = [
@@ -160,7 +163,7 @@ function ConfirmCard({ summary, onConfirm, onCancel }: {
 }
 
 function TxCard({ txHash, label }: { txHash: string; label: string }) {
-  const url = `https://explorer.injective.network/transaction/${txHash}`
+  const url = `https://tcx.inj.so/tx/${encodeURIComponent(txHash)}?network=mainnet&mode=all`
   return (
     <div className="tx-card">
       <span className="tx-label">✓ {label}</span>
@@ -548,6 +551,40 @@ export default function App() {
     })
   }, [])
 
+  function formatMatchedMessage(label: string, event?: RfqGatewayProgressEvent): string {
+    const result = event?.phase === 'matched' ? event.result : null
+    const price = result?.bestPrice ? ` at $${result.bestPrice}` : ''
+    const quoteCount = result?.quotesAccepted
+      ? ` from ${result.quotesAccepted} quote${result.quotesAccepted === 1 ? '' : 's'}`
+      : ''
+    return `RFQ matched: ${label}${price}${quoteCount}. Settlement is confirming...`
+  }
+
+  function handleMatchedSettlement({
+    result,
+    content,
+    label,
+  }: {
+    result: TxResult
+    content: string
+    label: string
+  }) {
+    const publishTx = (txHash: string) => {
+      pushAgent(content, { type: 'tx', txHash, label })
+    }
+
+    if (!result.confirmation) {
+      publishTx(result.txHash)
+      return
+    }
+
+    void result.confirmation
+      ?.then(confirmed => publishTx(confirmed.txHash || result.txHash))
+      .catch(() => {
+        pushAgent('Order reverted, please try again.')
+      })
+  }
+
   // ─── Actions ─────────────────────────────────────────────────────────────
 
   function handleDisconnect() {
@@ -813,6 +850,8 @@ export default function App() {
     pushAgent(`Requesting RFQ quotes for ${trade.side} ${trade.symbol}...`)
     try {
       const market = await resolveMarket(trade.symbol)
+      let matched = false
+      const matchedLabel = `${trade.side.toUpperCase()} ${trade.symbol}`
       const result = await openTrade({
         injAddress: wallet.injAddress,
         ethAddress: wallet.ethAddress,
@@ -820,24 +859,34 @@ export default function App() {
         side: trade.side,
         notionalUsdc: Number(trade.amount),
         leverage: Number(trade.leverage),
-        onProgress: replaceRfqStatus,
+        onProgress: (message, event) => {
+          if (event?.phase === 'matched') {
+            matched = true
+            replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
+            return
+          }
+          if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
+            return
+          }
+          replaceRfqStatus(message)
+        },
       })
-      setMessages(prev => {
-        const copy = [...prev]
-        const last = copy[copy.length - 1]
-        if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg(`${trade.side.toUpperCase()} RFQ settlement confirmed.`, {
-            type: 'tx', txHash: result.txHash,
-            label: `RFQ ${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
-          })
-        return copy
+      if (!matched) {
+        replaceRfqStatus(formatMatchedMessage(matchedLabel))
+      }
+      handleMatchedSettlement({
+        result,
+        content: `${trade.side.toUpperCase()} RFQ settlement confirmed.`,
+        label: `RFQ ${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
       })
     } catch (e) {
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
         if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg(`Trade failed: ${(e as Error).message}`)
+          copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
+            ? 'Order reverted, please try again.'
+            : `Trade failed: ${(e as Error).message}`)
         return copy
       })
     }
@@ -914,29 +963,42 @@ export default function App() {
     pushAgent(`Requesting RFQ close quote for ${pos.symbol}...`)
     try {
       const market = await resolveMarket(pos.symbol)
+      let matched = false
+      const matchedLabel = `Close ${pos.symbol}`
       const result = await closeTrade({
         injAddress: wallet.injAddress,
         ethAddress: wallet.ethAddress,
         market,
         side: pos.side,
         quantity: pos.quantity,
-        onProgress: replaceRfqStatus,
+        onProgress: (message, event) => {
+          if (event?.phase === 'matched') {
+            matched = true
+            replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
+            return
+          }
+          if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
+            return
+          }
+          replaceRfqStatus(message)
+        },
       })
-      setMessages(prev => {
-        const copy = [...prev]
-        const last = copy[copy.length - 1]
-        if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg('RFQ close settlement confirmed.', {
-            type: 'tx', txHash: result.txHash, label: `RFQ close ${pos.symbol} ${pos.side}`,
-          })
-        return copy
+      if (!matched) {
+        replaceRfqStatus(formatMatchedMessage(matchedLabel))
+      }
+      handleMatchedSettlement({
+        result,
+        content: 'RFQ close settlement confirmed.',
+        label: `RFQ close ${pos.symbol} ${pos.side}`,
       })
     } catch (e) {
       setMessages(prev => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
         if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg(`Close failed: ${(e as Error).message}`)
+          copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
+            ? 'Order reverted, please try again.'
+            : `Close failed: ${(e as Error).message}`)
         return copy
       })
     }

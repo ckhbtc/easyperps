@@ -91,17 +91,11 @@ interface TxApiLike {
   fetchTxPoll(txHash: string, timeout?: number): Promise<{ txHash?: string; code?: number; rawLog?: string }>
 }
 
-export interface ExecuteRfqGatewayAutoSignParams {
-  session: AutoSignSession
-  marketId: string
-  input: RfqOrderInput
-  onProgress?: (msg: string) => void
-  accountDetails?: AccountDetails | null
-  gatewayApi?: RfqGatewayApiLike
-  txApiClient?: TxApiLike
-  waitForConfirmation?: boolean
-  maxPrepareAttempts?: number
-  minQuoteTtlMs?: number
+export interface RfqGatewayMatchedResult {
+  rfqId: number
+  quotesAccepted: number
+  bestPrice: string | null
+  quotesWaitMs: number
 }
 
 export interface RfqGatewayConfirmationResult {
@@ -119,6 +113,30 @@ export interface RfqGatewayExecutionResult {
   status: 'matched' | 'confirmed'
   settlementPending: boolean
   confirmation?: Promise<RfqGatewayConfirmationResult>
+}
+
+export type RfqGatewayProgressEvent =
+  | { phase: 'preparing' }
+  | { phase: 'matching'; attempt: number }
+  | { phase: 'matched'; prepared: RfqPreparedAutoSign; result: RfqGatewayMatchedResult }
+  | { phase: 'signing'; result: RfqGatewayMatchedResult }
+  | { phase: 'broadcasting'; result: RfqGatewayMatchedResult }
+  | { phase: 'broadcasted'; result: RfqGatewayExecutionResult }
+  | { phase: 'confirmed'; result: RfqGatewayExecutionResult }
+
+export type RfqGatewayProgressCallback = (msg: string, event?: RfqGatewayProgressEvent) => void
+
+export interface ExecuteRfqGatewayAutoSignParams {
+  session: AutoSignSession
+  marketId: string
+  input: RfqOrderInput
+  onProgress?: RfqGatewayProgressCallback
+  accountDetails?: AccountDetails | null
+  gatewayApi?: RfqGatewayApiLike
+  txApiClient?: TxApiLike
+  waitForConfirmation?: boolean
+  maxPrepareAttempts?: number
+  minQuoteTtlMs?: number
 }
 
 const accountCache = new Map<string, { accountDetails: AccountDetails | null; ts: number }>()
@@ -525,7 +543,7 @@ export async function executeRfqGatewayAutoSign({
   const autosignAddress = privateKey.toBech32()
 
   try {
-    onProgress?.('Preparing RFQ settlement...')
+    onProgress?.('Preparing RFQ settlement...', { phase: 'preparing' })
     const resolvedAccountDetails = accountDetails === undefined
       ? await getRfqAccountDetailsForPrepare(autosignAddress)
       : accountDetails
@@ -540,7 +558,10 @@ export async function executeRfqGatewayAutoSign({
     let lastError: Error | null = null
 
     for (let attempt = 1; attempt <= maxPrepareAttempts; attempt += 1) {
-      onProgress?.(attempt === 1 ? 'Matching RFQ quote...' : 'Refreshing RFQ quote...')
+      onProgress?.(
+        attempt === 1 ? 'Matching RFQ quote...' : 'Refreshing RFQ quote...',
+        { phase: 'matching', attempt },
+      )
       prepared = await gatewayApi.fetchPrepareAutoSign(request)
       if (!prepared?.tx?.length) {
         throw new Error('RFQ gateway did not return a prepared settlement transaction')
@@ -567,7 +588,19 @@ export async function executeRfqGatewayAutoSign({
 
     if (!prepared) throw lastError || new Error('RFQ gateway did not return a fresh settlement transaction')
 
-    onProgress?.('Signing RFQ settlement locally...')
+    const matchedResult: RfqGatewayMatchedResult = {
+      rfqId: prepared.rfqId,
+      quotesAccepted: prepared.quotes.length,
+      bestPrice: prepared.quotes[0]?.price ?? null,
+      quotesWaitMs: prepared.quotesWaitMs,
+    }
+
+    onProgress?.('RFQ matched. Signing settlement locally...', {
+      phase: 'matched',
+      prepared,
+      result: matchedResult,
+    })
+    onProgress?.('Signing RFQ settlement locally...', { phase: 'signing', result: matchedResult })
     const txRaw = await signPreparedAutoSignTxRaw({
       tx: prepared.tx,
       feePayerSig: prepared.feePayerSig,
@@ -576,7 +609,7 @@ export async function executeRfqGatewayAutoSign({
       feePayerPubKey: prepared.feePayerPubKey,
     })
 
-    onProgress?.('Broadcasting RFQ settlement...')
+    onProgress?.('Broadcasting RFQ settlement...', { phase: 'broadcasting', result: matchedResult })
     const response = await txApiClient.broadcast(txRaw)
     if (Number(response.code || 0) !== 0) {
       throw new Error(`RFQ broadcast failed (code ${response.code}): ${response.rawLog}`)
@@ -587,10 +620,7 @@ export async function executeRfqGatewayAutoSign({
     const txHash = response.txHash
     const baseResult = {
       txHash,
-      rfqId: prepared.rfqId,
-      quotesAccepted: prepared.quotes.length,
-      bestPrice: prepared.quotes[0]?.price ?? null,
-      quotesWaitMs: prepared.quotesWaitMs,
+      ...matchedResult,
     }
     const confirmation = confirmRfqSettlement(txHash, txApiClient)
       .catch(err => {
@@ -599,22 +629,28 @@ export async function executeRfqGatewayAutoSign({
       })
 
     if (!waitForConfirmation) {
-      onProgress?.('RFQ matched. Awaiting chain confirmation...')
-      return {
+      const pendingResult: RfqGatewayExecutionResult = {
         ...baseResult,
         status: 'matched',
         settlementPending: true,
         confirmation,
       }
+      onProgress?.('RFQ settlement broadcast. Awaiting chain confirmation...', {
+        phase: 'broadcasted',
+        result: pendingResult,
+      })
+      return pendingResult
     }
 
     const confirmed = await confirmation
-    return {
+    const confirmedResult: RfqGatewayExecutionResult = {
       ...baseResult,
       txHash: confirmed.txHash,
       status: 'confirmed',
       settlementPending: false,
     }
+    onProgress?.('RFQ settlement confirmed.', { phase: 'confirmed', result: confirmedResult })
+    return confirmedResult
   } catch (err) {
     invalidateRfqAccountCache(autosignAddress)
     throw err
