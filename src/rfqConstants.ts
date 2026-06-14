@@ -1,6 +1,7 @@
 export const RFQ_CONTRACT_ADDRESS = 'inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k'
 export const RFQ_GATEWAY_URL = 'https://rfq.gateway.grpc-web.injective.network/'
 export const RFQ_CHAIN_ID = 'injective-1'
+export const RFQ_EVM_CHAIN_ID = 1776
 export const RFQ_COLLECT_QUOTES_MS = 500
 export const RFQ_PREPARE_MAX_ATTEMPTS = 3
 export const RFQ_PREPARE_RETRY_DELAY_MS = 75
