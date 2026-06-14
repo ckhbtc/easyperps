@@ -16,6 +16,19 @@ describe('parse', () => {
     assert.deepEqual(result.missing, [])
   })
 
+  it('passes through listed market symbols that are not in the static aliases', () => {
+    const result = parse('long $5 SPCX 1x leverage')
+
+    assert.equal(result.intent.kind, 'trade')
+    if (result.intent.kind !== 'trade') assert.fail('expected trade intent')
+    assert.equal(result.intent.side, 'long')
+    assert.equal(result.intent.symbol, 'SPCX')
+    assert.equal(result.intent.amount, 5)
+    assert.equal(result.intent.qty, 0)
+    assert.equal(result.intent.leverage, 1)
+    assert.deepEqual(result.missing, [])
+  })
+
   it('parses token quantity trades', () => {
     const result = parse('short 2 ETH with 3x')
 
@@ -77,6 +90,14 @@ describe('parse', () => {
 
     assert.equal(result.ready, true)
     assert.deepEqual(result.intent, { kind: 'close', symbol: 'INJ' })
+    assert.deepEqual(result.missing, [])
+  })
+
+  it('fills missing markets from non-aliased bare token replies', () => {
+    const result = applyClarification({ kind: 'close', symbol: '' }, 'SPCX')
+
+    assert.equal(result.ready, true)
+    assert.deepEqual(result.intent, { kind: 'close', symbol: 'SPCX' })
     assert.deepEqual(result.missing, [])
   })
 })

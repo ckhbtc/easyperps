@@ -82,12 +82,98 @@ const LEVERAGE_PATTERN = /(?:^|\s)(?:w(?:ith)?\s+)?(\d+(?:\.\d+)?)\s*[xX×]|\b[x
 const AMOUNT_PATTERN =
   /\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:usdc|usdt?|usd|dollars?|\$)|(\d+(?:\.\d+)?)\s+(?:of\s+)?(?:usdc|usdt?|usd|dollars?)/i
 
-// All token symbols — broad list including short aliases
-const TOKEN_IN_TEXT_PATTERN =
-  /\b(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)\b/i
+// Known aliases are only shortcuts. Final market validation happens against
+// the live derivative markets endpoint in resolveMarket().
+const KNOWN_TOKEN_PATTERN_SOURCE =
+  'btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near'
 
-const TOKEN_ONLY_PATTERN =
-  /^(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)$/i
+const TOKEN_IN_TEXT_PATTERN = new RegExp(`\\b(${KNOWN_TOKEN_PATTERN_SOURCE})\\b`, 'i')
+const TOKEN_ONLY_PATTERN = new RegExp(`^(${KNOWN_TOKEN_PATTERN_SOURCE})$`, 'i')
+const SYMBOL_IN_TEXT_PATTERN = /\b(?:[a-z][a-z0-9]{1,15}|\d{2,}[a-z][a-z0-9]{0,12})\b/gi
+
+const RESERVED_SYMBOL_WORDS = new Set([
+  'a',
+  'all',
+  'an',
+  'at',
+  'balance',
+  'balances',
+  'bear',
+  'bearish',
+  'bridge',
+  'bull',
+  'bullish',
+  'buy',
+  'calls',
+  'close',
+  'current',
+  'deposit',
+  'dollars',
+  'dump',
+  'exit',
+  'flatten',
+  'for',
+  'from',
+  'fund',
+  'funds',
+  'get',
+  'how',
+  'leverage',
+  'lev',
+  'list',
+  'long',
+  'market',
+  'markets',
+  'my',
+  'of',
+  'on',
+  'open',
+  'position',
+  'positions',
+  'price',
+  'pump',
+  'puts',
+  'quote',
+  'sell',
+  'short',
+  'show',
+  'the',
+  'token',
+  'trades',
+  'usdc',
+  'usd',
+  'usdt',
+  'via',
+  'wallet',
+  'what',
+  'which',
+  'with',
+])
+
+function isSymbolCandidate(raw: string): boolean {
+  const lower = raw.toLowerCase()
+  if (TOKEN_ALIASES[lower]) return true
+  if (RESERVED_SYMBOL_WORDS.has(lower)) return false
+  return /^[a-z][a-z0-9]{1,15}$/i.test(raw) || /^\d{2,}[a-z][a-z0-9]{0,12}$/i.test(raw)
+}
+
+function extractTokenMatch(text: string): { raw: string; symbol: string } | null {
+  const knownMatch = TOKEN_IN_TEXT_PATTERN.exec(text)
+  if (knownMatch) {
+    return { raw: knownMatch[1], symbol: normalizeToken(knownMatch[1]) }
+  }
+
+  for (const match of text.matchAll(SYMBOL_IN_TEXT_PATTERN)) {
+    const raw = match[0]
+    if (isSymbolCandidate(raw)) return { raw, symbol: normalizeToken(raw) }
+  }
+
+  return null
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 const BRIDGE_PATTERN = /\b(bridge|deposit|fund)\b/i
 
@@ -143,8 +229,10 @@ function parsePositiveAmount(text: string): number {
 }
 
 function parseBareToken(text: string): string {
-  const tokenMatch = TOKEN_ONLY_PATTERN.exec(text.trim())
-  return tokenMatch ? normalizeToken(tokenMatch[1]) : ''
+  const trimmed = text.trim()
+  const tokenMatch = TOKEN_ONLY_PATTERN.exec(trimmed)
+  if (tokenMatch) return normalizeToken(tokenMatch[1])
+  return isSymbolCandidate(trimmed) ? normalizeToken(trimmed) : ''
 }
 
 function missingForIntent(intent: PendingIntent | ParsedIntent): string[] {
@@ -239,10 +327,9 @@ export function parse(input: string): ParseResult {
   }
 
   if (PRICE_PATTERN.test(text) && !SIDE_PATTERNS.long.test(text) && !SIDE_PATTERNS.short.test(text)) {
-    const tokenMatch = TOKEN_IN_TEXT_PATTERN.exec(text)
+    const tokenMatch = extractTokenMatch(text)
     if (tokenMatch) {
-      const symbol = normalizeToken(tokenMatch[1])
-      return { intent: { kind: 'price', symbol }, missing: [], summary: `Get ${symbol} price` }
+      return { intent: { kind: 'price', symbol: tokenMatch.symbol }, missing: [], summary: `Get ${tokenMatch.symbol} price` }
     }
     return { intent: { kind: 'price', symbol: '' }, missing: ['which token?'] }
   }
@@ -266,13 +353,12 @@ export function parse(input: string): ParseResult {
   // ─── Close ──────────────────────────────────────────────────────────────
 
   if (CLOSE_PATTERN.test(text)) {
-    const tokenMatch = TOKEN_IN_TEXT_PATTERN.exec(text)
+    const tokenMatch = extractTokenMatch(text)
     if (tokenMatch) {
-      const symbol = normalizeToken(tokenMatch[1])
       return {
-        intent: { kind: 'close', symbol },
+        intent: { kind: 'close', symbol: tokenMatch.symbol },
         missing: [],
-        summary: `Close your ${symbol} position`,
+        summary: `Close your ${tokenMatch.symbol} position`,
       }
     }
     return { intent: { kind: 'close', symbol: '' }, missing: ['which market to close?'] }
@@ -290,8 +376,8 @@ export function parse(input: string): ParseResult {
   const side: 'long' | 'short' = isLong ? 'long' : 'short'
 
   // Extract token
-  const tokenMatch = TOKEN_IN_TEXT_PATTERN.exec(text)
-  const symbol = tokenMatch ? normalizeToken(tokenMatch[1]) : ''
+  const tokenMatch = extractTokenMatch(text)
+  const symbol = tokenMatch?.symbol ?? ''
 
   // Extract USDC notional, or a generic dollar amount.
   const amountMatch = AMOUNT_PATTERN.exec(text)
@@ -301,8 +387,9 @@ export function parse(input: string): ParseResult {
   // Extract token quantity — bare number adjacent to token name
   // e.g. "long 1 INJ" → qty=1, "1 inj long" → qty=1
   let tokenQty = 0
-  if (!usdcAmount) {
-    const qtyBeforeToken = /\b(\d+(?:\.\d+)?)\s+(?:btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)\b/i
+  if (!usdcAmount && tokenMatch) {
+    const tokenPattern = escapeRegExp(tokenMatch.raw)
+    const qtyBeforeToken = new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s+${tokenPattern}\\b`, 'i')
     const qtyAfterSide = /\b(?:long|short|buy|sell)\s+(\d+(?:\.\d+)?)\b/i
     const qbtMatch = qtyBeforeToken.exec(text)
     const qasMatch = qtyAfterSide.exec(text)
