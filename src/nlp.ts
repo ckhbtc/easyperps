@@ -40,6 +40,14 @@ export interface ParseResult {
   missing: string[]
 }
 
+export type PendingIntent = Partial<ParsedIntent> & { kind: ParsedIntent['kind'] }
+
+export interface ClarificationResult {
+  intent: PendingIntent | ParsedIntent
+  missing: string[]
+  ready: boolean
+}
+
 // Common token aliases
 const TOKEN_ALIASES: Record<string, string> = {
   bitcoin: 'BTC',
@@ -77,6 +85,9 @@ const AMOUNT_PATTERN =
 // All token symbols — broad list including short aliases
 const TOKEN_IN_TEXT_PATTERN =
   /\b(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)\b/i
+
+const TOKEN_ONLY_PATTERN =
+  /^(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)$/i
 
 const BRIDGE_PATTERN = /\b(bridge|deposit|fund)\b/i
 
@@ -124,6 +135,91 @@ const POSITION_PATTERN = /\b(position|positions|open trades?|my trades?|p&l|pnl|
 const MARKETS_PATTERN = /\b(list markets?|show markets?|available markets?|what markets?|markets)\b/i
 
 const PRICE_PATTERN = /\b(price|what.?s|how much is|quote|current price)\b/i
+
+function parsePositiveAmount(text: string): number {
+  const match = /^\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:usdc|usdt|usd|dollars?)?\s*$/i.exec(text)
+  const amount = match ? parseFloat(match[1]) : 0
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+function parseBareToken(text: string): string {
+  const tokenMatch = TOKEN_ONLY_PATTERN.exec(text.trim())
+  return tokenMatch ? normalizeToken(tokenMatch[1]) : ''
+}
+
+function missingForIntent(intent: PendingIntent | ParsedIntent): string[] {
+  switch (intent.kind) {
+    case 'trade': {
+      const trade = intent as Partial<Extract<ParsedIntent, { kind: 'trade' }>>
+      const missing: string[] = []
+      if (!trade.symbol) missing.push('which token?')
+      if (!trade.amount && !trade.qty) missing.push('how much? (e.g. $50 or 10 INJ)')
+      if (!trade.leverage) missing.push('what leverage? (e.g. 5x)')
+      return missing
+    }
+    case 'close': {
+      const close = intent as Partial<Extract<ParsedIntent, { kind: 'close' }>>
+      return close.symbol ? [] : ['which market to close?']
+    }
+    case 'price': {
+      const price = intent as Partial<Extract<ParsedIntent, { kind: 'price' }>>
+      return price.symbol ? [] : ['which token?']
+    }
+    case 'bridge': {
+      const bridge = intent as Partial<Extract<ParsedIntent, { kind: 'bridge' }>>
+      return bridge.amount ? [] : ['how much to bridge? (e.g. $10 or 50 USDC)']
+    }
+    case 'unknown':
+      return []
+    default:
+      return []
+  }
+}
+
+export function applyClarification(pending: PendingIntent, text: string): ClarificationResult {
+  const fresh = parse(text)
+  const base = { ...pending } as Record<string, unknown>
+
+  if (fresh.intent.kind === 'trade' && base.kind === 'trade') {
+    const fi = fresh.intent
+    if (fi.symbol) base.symbol = fi.symbol
+    if (fi.amount) base.amount = fi.amount
+    if (fi.qty) base.qty = fi.qty
+    if (fi.leverage) base.leverage = fi.leverage
+  } else if (fresh.intent.kind === 'close' && base.kind === 'close') {
+    if (fresh.intent.symbol) base.symbol = fresh.intent.symbol
+  } else if (fresh.intent.kind === 'price' && base.kind === 'price') {
+    if (fresh.intent.symbol) base.symbol = fresh.intent.symbol
+  } else if (fresh.intent.kind === 'bridge' && base.kind === 'bridge') {
+    if (fresh.intent.amount) base.amount = fresh.intent.amount
+    if (fresh.intent.source) base.source = fresh.intent.source
+  } else if (fresh.intent.kind !== 'unknown') {
+    return {
+      intent: fresh.intent,
+      missing: fresh.missing,
+      ready: fresh.missing.length === 0,
+    }
+  } else if (base.kind === 'trade') {
+    const t = text.trim()
+    const levOnly = /^(\d+(?:\.\d+)?)\s*[xX×]$/.exec(t)
+    const numOnly = /^(\d+(?:\.\d+)?)$/.exec(t)
+    const symbol = parseBareToken(t)
+
+    if (levOnly) base.leverage = parseFloat(levOnly[1])
+    else if (numOnly) base.amount = parseFloat(numOnly[1])
+    if (symbol) base.symbol = symbol
+  } else if (base.kind === 'close' || base.kind === 'price') {
+    const symbol = parseBareToken(text)
+    if (symbol) base.symbol = symbol
+  } else if (base.kind === 'bridge') {
+    const amount = parsePositiveAmount(text)
+    if (amount > 0) base.amount = amount
+  }
+
+  const intent = base as PendingIntent
+  const missing = missingForIntent(intent)
+  return { intent, missing, ready: missing.length === 0 }
+}
 
 export function parse(input: string): ParseResult {
   const text = input.trim()

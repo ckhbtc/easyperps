@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { connectMetaMask, isMetaMaskAvailable, onAccountsChanged } from './wallet'
 import type { WalletInfo } from './wallet'
-import { parse, formatMissing } from './nlp'
-import type { ParsedIntent } from './nlp'
+import { applyClarification, parse, formatMissing } from './nlp'
+import type { ParsedIntent, PendingIntent } from './nlp'
 import { getMarketPrice, getBalances, getPositions, resolveMarket, listMarkets } from './injective'
 import type { PositionInfo, BalanceInfo, PerpMarket } from './injective'
 import { openTrade, closeTrade } from './tx'
@@ -81,12 +81,6 @@ const QUICK_COMMANDS = [
 
 function isRfqStatusMessage(content: string): boolean {
   return RFQ_STATUS_PREFIXES.some(prefix => content.startsWith(prefix))
-}
-
-function parsePositiveAmount(text: string): number {
-  const match = /^\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:usdc|usdt|usd|dollars?)?\s*$/i.exec(text)
-  const amount = match ? parseFloat(match[1]) : 0
-  return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
 const WELCOME = agentMsg(
@@ -500,7 +494,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [pendingClarification, setPendingClarification] = useState<Partial<ParsedIntent> | null>(null)
+  const [pendingClarification, setPendingClarification] = useState<PendingIntent | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -662,54 +656,15 @@ export default function App() {
   }
 
   async function handleClarification(text: string) {
-    const fresh = parse(text)
-    const base = { ...pendingClarification } as Record<string, unknown>
+    if (!pendingClarification?.kind) return
+    const clarification = applyClarification(pendingClarification, text)
 
-    if (fresh.intent.kind === 'trade' && base.kind === 'trade') {
-      const fi = fresh.intent as { symbol?: string; amount?: number; qty?: number; leverage?: number }
-      if (fi.symbol)   base.symbol   = fi.symbol
-      if (fi.amount)   base.amount   = fi.amount
-      if (fi.qty)      base.qty      = fi.qty
-      if (fi.leverage) base.leverage = fi.leverage
-    } else if (fresh.intent.kind !== 'unknown') {
+    if (clarification.ready) {
       setPendingClarification(null)
-      await executeIntent(fresh.intent)
-      return
-    } else if (base.kind === 'trade') {
-      // Unknown parse, try to extract a single bare clarification value:
-      //   "5x" or "10x"  → leverage
-      //   "5" or "100"   -> USDC amount
-      //   "INJ" / "BTC"  → symbol
-      const t = text.trim()
-      const levOnly = /^(\d+(?:\.\d+)?)\s*[xX×]$/.exec(t)
-      const numOnly = /^(\d+(?:\.\d+)?)$/.exec(t)
-      const tokOnly = /^(btc|bitcoin|eth|ethereum|inj|injective|sol|solana|atom|cosmos|bnb|bonk|tia|sei|pyth|link|avax|op|arb|doge|pepe|wif|sui|apt|near)$/i.exec(t)
-      const tokenAliases: Record<string, string> = { bitcoin: 'BTC', ethereum: 'ETH', injective: 'INJ', solana: 'SOL', cosmos: 'ATOM' }
-      if      (levOnly) base.leverage = parseFloat(levOnly[1])
-      else if (numOnly) base.amount   = parseFloat(numOnly[1])
-      if (tokOnly) base.symbol = tokenAliases[tokOnly[1].toLowerCase()] ?? tokOnly[1].toUpperCase()
-    } else if (base.kind === 'bridge') {
-      const amount = parsePositiveAmount(text)
-      if (amount > 0) base.amount = amount
-    }
-
-    const stillMissing: string[] = []
-    if (base.kind === 'trade') {
-      if (!base.symbol)               stillMissing.push('which token?')
-      if (!base.amount && !base.qty)  stillMissing.push('how much? (e.g. $50 or 10 INJ)')
-      if (!base.leverage)             stillMissing.push('what leverage? (e.g. 5x)')
-    } else if (base.kind === 'close') {
-      if (!base.symbol) stillMissing.push('which market to close?')
-    } else if (base.kind === 'bridge') {
-      if (!base.amount) stillMissing.push('how much to bridge? (e.g. $10 or 50 USDC)')
-    }
-
-    if (stillMissing.length > 0) {
-      setPendingClarification(base as Partial<ParsedIntent>)
-      pushAgent(formatMissing(stillMissing))
+      await executeIntent(clarification.intent as ParsedIntent)
     } else {
-      setPendingClarification(null)
-      await executeIntent(base as ParsedIntent)
+      setPendingClarification(clarification.intent as PendingIntent)
+      pushAgent(formatMissing(clarification.missing))
     }
   }
 

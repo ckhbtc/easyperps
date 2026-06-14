@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { parse } from '../src/nlp.js'
+import { applyClarification, parse } from '../src/nlp.js'
 
 describe('parse', () => {
   it('parses a USDC notional trade', () => {
@@ -70,5 +70,13 @@ describe('parse', () => {
     assert.equal(parse('show balances').intent.kind, 'balances')
     assert.equal(parse('show positions').intent.kind, 'positions')
     assert.equal(parse('price of BTC').intent.kind, 'price')
+  })
+
+  it('fills a missing close market from a bare token reply', () => {
+    const result = applyClarification({ kind: 'close', symbol: '' }, 'INJ')
+
+    assert.equal(result.ready, true)
+    assert.deepEqual(result.intent, { kind: 'close', symbol: 'INJ' })
+    assert.deepEqual(result.missing, [])
   })
 })
