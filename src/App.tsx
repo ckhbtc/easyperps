@@ -10,6 +10,7 @@ import { enableAutoSign, disableAutoSign, isAutoSignActive } from './autosign'
 import { fetchBridgeQuote, executeBridge, isValidBridgeAmount, MAX_BRIDGE_USDC } from './bridge'
 import type { BridgeEstimation } from './bridge'
 import { Decimal } from 'decimal.js'
+import { startAppVersionMonitor } from './version'
 import './App.css'
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -418,6 +419,15 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('ep-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    return startAppVersionMonitor({
+      onStale: () => {
+        setMessages(prev => [...prev, systemMsg('A newer EasyPerps build is live. Reloading before trading...')])
+        window.setTimeout(() => window.location.reload(), 1200)
+      },
+    })
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
