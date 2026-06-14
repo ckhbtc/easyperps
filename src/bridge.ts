@@ -261,8 +261,9 @@ async function pollAttestation(
 
 export async function fetchBridgeQuote(
   amount: string,
-  _recipientEvm: string,
+  recipientEvm: string,
 ): Promise<BridgeEstimation> {
+  void recipientEvm
   const srcAmountBase = amountToBaseUnits(amount)
   return {
     srcAmount: amount,
