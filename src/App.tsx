@@ -96,7 +96,7 @@ const WELCOME = agentMsg(
 // ─── Cards ───────────────────────────────────────────────────────────────────
 
 function BalancesCard({ data }: { data: BalanceInfo[] }) {
-  if (data.length === 0) return <p className="card-empty">No balances found.</p>
+  if (data.length === 0) return <p className="card-empty">No USDC balance found.</p>
   return (
     <table className="data-table">
       <thead><tr><th>Asset</th><th>Amount</th></tr></thead>
@@ -718,17 +718,17 @@ export default function App() {
 
     switch (intent.kind) {
       case 'balances': {
-        pushAgent('Fetching balances…')
+        pushAgent('Fetching USDC balance...')
         try {
           const data = await getBalances(wallet.injAddress)
           setMessages(prev => {
             const copy = [...prev]
             const last = copy[copy.length - 1]
-            if (last.content === 'Fetching balances…')
-              copy[copy.length - 1] = agentMsg('Your balances:', { type: 'balances', data })
+            if (last.content === 'Fetching USDC balance...')
+              copy[copy.length - 1] = agentMsg('Your USDC balance:', { type: 'balances', data })
             return copy
           })
-        } catch (e) { pushAgent(`Error fetching balances: ${(e as Error).message}`) }
+        } catch (e) { pushAgent(`Error fetching USDC balance: ${(e as Error).message}`) }
         break
       }
       case 'positions': {

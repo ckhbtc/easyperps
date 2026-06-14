@@ -135,6 +135,11 @@ export interface BalanceInfo {
   denom: string
 }
 
+interface PortfolioBalanceLike {
+  bankBalancesList?: Array<{ denom?: string; amount?: string }>
+  subaccountsList?: Array<{ denom?: string; deposit?: { availableBalance?: string } }>
+}
+
 // ─── Markets cache ────────────────────────────────────────────────────────────
 
 let _marketsCache: PerpMarket[] | null = null
@@ -219,35 +224,34 @@ export async function getMarketPrice(symbol: string): Promise<string> {
 
 // ─── Balances ────────────────────────────────────────────────────────────────
 
-export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
-  const portfolio = await portfolioApi.fetchAccountPortfolioBalances(injAddress)
+export function isNativeUsdcDenom(denom: string): boolean {
+  return denom.toLowerCase() === NATIVE_USDC_DENOM
+}
 
-  const result: BalanceInfo[] = []
+export function collectNativeUsdcBalances(portfolio: PortfolioBalanceLike): BalanceInfo[] {
+  let total = new Decimal(0)
 
-  // Bank balances — Coin type: { denom: string; amount: string }
+  // Bank balances are wallet-side native USDC.
   for (const b of portfolio.bankBalancesList ?? []) {
-    const denom  = b.denom ?? ''
-    const token  = resolveDenom(denom)
-    if (!token) continue                        // skip unknown / unrecognised denoms
-    const amt = new Decimal(b.amount ?? '0').div(new Decimal(10).pow(token.decimals))
-    if (amt.gt(0.0001)) {
-      result.push({ symbol: token.symbol, amount: amt.toFixed(4), denom })
-    }
+    const denom = b.denom ?? ''
+    if (!isNativeUsdcDenom(denom)) continue
+    total = total.add(new Decimal(b.amount ?? '0').div(new Decimal(10).pow(QUOTE_DECIMALS)))
   }
 
-  // Subaccount balances — PortfolioSubaccountBalanceV2: { subaccountId, denom, deposit? }
+  // Subaccount balances are trading-side available native USDC.
   for (const s of portfolio.subaccountsList ?? []) {
     const denom = s.denom ?? ''
-    const token = resolveDenom(denom)
-    if (!token) continue
-
-    const avail = new Decimal(s.deposit?.availableBalance ?? '0').div(new Decimal(10).pow(token.decimals))
-    if (avail.gt(0.0001)) {
-      result.push({ symbol: `${token.symbol} (sub)`, amount: avail.toFixed(4), denom })
-    }
+    if (!isNativeUsdcDenom(denom)) continue
+    total = total.add(new Decimal(s.deposit?.availableBalance ?? '0').div(new Decimal(10).pow(QUOTE_DECIMALS)))
   }
 
-  return result
+  if (!total.gt(0.0001)) return []
+  return [{ symbol: 'USDC', amount: total.toFixed(4), denom: NATIVE_USDC_DENOM }]
+}
+
+export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
+  const portfolio = await portfolioApi.fetchAccountPortfolioBalances(injAddress)
+  return collectNativeUsdcBalances(portfolio)
 }
 
 // ─── Positions ────────────────────────────────────────────────────────────────
