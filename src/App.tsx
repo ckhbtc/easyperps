@@ -498,6 +498,12 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  function focusComposer() {
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true })
+    })
+  }
+
   useEffect(() => {
     return startAppVersionMonitor({
       onStale: () => {
@@ -626,12 +632,13 @@ export default function App() {
     if (!text || loading) return
     setInput('')
     setMessages(prev => [...prev, userMsg(text)])
+    focusComposer()
     setLoading(true)
     try {
       await processMessage(text)
     } finally {
       setLoading(false)
-      inputRef.current?.focus()
+      focusComposer()
     }
   }
 
@@ -1034,14 +1041,16 @@ export default function App() {
             </main>
 
             <footer className="input-bar">
-              <CommandChips onSelect={setInput} />
+              <CommandChips onSelect={(command) => {
+                setInput(command)
+                focusComposer()
+              }} />
               <div className="input-row">
                 <input
                   ref={inputRef}
                   className="chat-input"
                   placeholder="type your order..."
                   value={input}
-                  disabled={loading}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
@@ -1049,6 +1058,7 @@ export default function App() {
                 />
                 <button
                   className="btn btn-send"
+                  onMouseDown={e => e.preventDefault()}
                   onClick={handleSend}
                   disabled={loading || !input.trim()}
                 >
