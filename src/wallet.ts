@@ -26,6 +26,10 @@ export interface WalletInfo {
   injAddress: string
 }
 
+interface ConnectMetaMaskOptions {
+  requestAccountSelection?: boolean
+}
+
 declare global {
   interface Window {
     ethereum?: {
@@ -41,10 +45,46 @@ export function isMetaMaskAvailable(): boolean {
   return typeof window !== 'undefined' && !!window.ethereum?.isMetaMask
 }
 
-export async function connectMetaMask(): Promise<WalletInfo> {
+function isUnsupportedWalletMethod(err: unknown): boolean {
+  const code = (err as { code?: number }).code
+  const message = String((err as { message?: string }).message ?? '')
+  return code === -32601 || /unsupported|not supported|does not exist/i.test(message)
+}
+
+async function requestAccountSelection(): Promise<void> {
+  if (!window.ethereum) return
+  try {
+    await window.ethereum.request({
+      method: 'wallet_requestPermissions',
+      params: [{ eth_accounts: {} }],
+    })
+  } catch (err) {
+    if (isUnsupportedWalletMethod(err)) return
+    throw err
+  }
+}
+
+export async function disconnectMetaMask(): Promise<void> {
+  if (!window.ethereum) return
+  try {
+    await window.ethereum.request({
+      method: 'wallet_revokePermissions',
+      params: [{ eth_accounts: {} }],
+    })
+  } catch (err) {
+    if (isUnsupportedWalletMethod(err)) return
+    throw err
+  }
+}
+
+export async function connectMetaMask({
+  requestAccountSelection: shouldRequestAccountSelection = true,
+}: ConnectMetaMaskOptions = {}): Promise<WalletInfo> {
   if (!window.ethereum) {
     throw new Error('MetaMask not detected. Please install MetaMask.')
   }
+
+  if (shouldRequestAccountSelection) await requestAccountSelection()
 
   const accounts = await window.ethereum.request({
     method: 'eth_requestAccounts',

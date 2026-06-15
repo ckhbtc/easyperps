@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { connectMetaMask, isMetaMaskAvailable, onAccountsChanged } from './wallet'
+import { connectMetaMask, disconnectMetaMask, isMetaMaskAvailable, onAccountsChanged } from './wallet'
 import type { WalletInfo } from './wallet'
 import { applyClarification, parse, formatMissing } from './nlp'
 import type { ParsedIntent, PendingIntent } from './nlp'
@@ -692,12 +692,17 @@ export default function App() {
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
-  function handleDisconnect() {
+  async function handleDisconnect() {
     disableAutoSign(wallet?.injAddress)
     setAutoSign(false)
     setYolo(false)
     setWallet(null)
     setMessages(prev => [...prev, systemMsg('Wallet disconnected.')])
+    try {
+      await disconnectMetaMask()
+    } catch (err) {
+      console.warn('MetaMask permission revoke failed', err)
+    }
   }
 
   function handleClearHistory() {

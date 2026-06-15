@@ -29,3 +29,10 @@ describe('positions empty-state source contract', () => {
     assert.match(app, /agentMsg\('Your open positions:', \{ type: 'positions', data \}\)/)
   })
 })
+
+describe('wallet disconnect source contract', () => {
+  it('revokes MetaMask account permissions on disconnect', () => {
+    assert.match(app, /disconnectMetaMask/)
+    assert.match(app, /await disconnectMetaMask\(\)/)
+  })
+})
