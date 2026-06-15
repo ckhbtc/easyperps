@@ -83,6 +83,29 @@ const QUICK_COMMANDS = [
   'bridge $10 from base',
 ]
 
+const DEALER_TICKER_PHRASES = [
+  'HOT RFQ DEALS',
+  'MAINNET MADNESS',
+  'NO BACKEND',
+  'FAST QUOTES',
+  'NOT FINANCIAL ADVICE',
+  'NATIVE USDC',
+  'ASK ABOUT BRIDGING',
+  'CCTP CASH EXPRESS',
+  'AUTO SIGN SPECIAL',
+  'YOLO BUTTON ENERGY',
+  'ORDER BOOK OPTIONAL',
+  'SETTLE LIKE A PRO',
+  'BRIDGE FROM BASE',
+  'ETH OPTIMISM ARB',
+  'SPREADS SO NICE',
+  'POWERED BY INJECTIVE',
+  'DEALER DESK OPEN',
+  'USDC ONLY ZONE',
+]
+
+const DEALER_TICKER_LANES = [0, 1]
+
 function isRfqStatusMessage(content: string): boolean {
   return RFQ_STATUS_PREFIXES.some(prefix => content.startsWith(prefix))
 }
@@ -457,20 +480,13 @@ function DealerTicker() {
     <>
       <div className="dealer-ticker" aria-hidden="true">
         <div className="dealer-ticker-track">
-          <span>HOT RFQ DEALS</span>
-          <span>MAINNET MADNESS</span>
-          <span>NO BACKEND</span>
-          <span>FAST QUOTES</span>
-          <span>NOT FINANCIAL ADVICE</span>
-          <span>NATIVE USDC</span>
-          <span>ASK ABOUT BRIDGING</span>
-          <span>HOT RFQ DEALS</span>
-          <span>MAINNET MADNESS</span>
-          <span>NO BACKEND</span>
-          <span>FAST QUOTES</span>
-          <span>NOT FINANCIAL ADVICE</span>
-          <span>NATIVE USDC</span>
-          <span>ASK ABOUT BRIDGING</span>
+          {DEALER_TICKER_LANES.map(lane => (
+            <div className="dealer-ticker-group" key={lane}>
+              {DEALER_TICKER_PHRASES.map(phrase => (
+                <span key={`${lane}-${phrase}`}>{phrase}</span>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
       <div className="rainbow-stripe" aria-hidden="true" />

@@ -68,3 +68,30 @@ describe('bridge source dropdown UI', () => {
     assert.match(selected, /background:\s*var\(--blue\);/)
   })
 })
+
+describe('dealer ticker marquee', () => {
+  it('renders duplicated ticker lanes so the loop can reset invisibly', () => {
+    assert.match(appSource, /const DEALER_TICKER_PHRASES = \[/)
+    assert.match(appSource, /const DEALER_TICKER_LANES = \[0, 1\]/)
+    assert.match(appSource, /DEALER_TICKER_LANES\.map/)
+    assert.match(appSource, /className="dealer-ticker-group"/)
+  })
+
+  it('keeps enough phrases in each lane to cover wide screens', () => {
+    const phrases = /const DEALER_TICKER_PHRASES = \[([\s\S]*?)\]\n/.exec(appSource)?.[1] ?? ''
+    const phraseCount = (phrases.match(/'/g) ?? []).length / 2
+
+    assert.ok(phraseCount >= 14, `expected at least 14 ticker phrases, found ${phraseCount}`)
+  })
+
+  it('animates exactly one duplicated lane with no end gap', () => {
+    const track = ruleBody('.dealer-ticker-track')
+    const group = ruleBody('.dealer-ticker-group')
+
+    assert.match(css, /@keyframes dealer-marquee\s*\{[\s\S]*translate3d\(-50%,\s*0,\s*0\);[\s\S]*\}/)
+    assert.match(track, /animation:\s*dealer-marquee\s*24s linear infinite;/)
+    assert.match(track, /will-change:\s*transform;/)
+    assert.match(group, /flex:\s*0 0 auto;/)
+    assert.match(group, /min-width:\s*100vw;/)
+  })
+})
