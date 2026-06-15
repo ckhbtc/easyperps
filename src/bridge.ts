@@ -19,6 +19,7 @@ const STANDARD_MAX_FEE = 0n
 
 const APPROVE_SIG = '0x095ea7b3'
 const ALLOWANCE_SIG = '0xdd62ed3e'
+const BALANCE_OF_SIG = '0x70a08231'
 const DEPOSIT_FOR_BURN_SIG = '0x8e0250ee'
 const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d{1,6})?$/
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
@@ -252,6 +253,10 @@ function encodeAllowance(owner: string, spender: string): string {
   return `${ALLOWANCE_SIG}${padAddress(owner)}${padAddress(spender)}`
 }
 
+function encodeBalanceOf(owner: string): string {
+  return `${BALANCE_OF_SIG}${padAddress(owner)}`
+}
+
 function encodeDepositForBurn(amount: bigint, recipientEvm: string, source: BridgeSourceChain): string {
   return [
     DEPOSIT_FOR_BURN_SIG,
@@ -387,6 +392,55 @@ export async function fetchBridgeQuote(
     sourceChainId: source.id,
     sourceChain: source.shortName,
   }
+}
+
+async function fetchSourceUsdcBalanceBase(owner: string, source: BridgeSourceChain): Promise<bigint> {
+  let lastError: Error | null = null
+
+  for (const rpcUrl of source.rpcUrls) {
+    try {
+      const res = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_call',
+          params: [{
+            to: source.usdc,
+            data: encodeBalanceOf(owner),
+          }, 'latest'],
+        }),
+      })
+
+      if (!res.ok) throw new Error(`RPC returned HTTP ${res.status}`)
+
+      const data = await res.json() as {
+        result?: string
+        error?: { message?: string }
+      }
+      if (data.error) throw new Error(data.error.message ?? 'RPC returned an error')
+      if (!data.result || !/^0x[0-9a-fA-F]+$/.test(data.result)) {
+        throw new Error('RPC returned an invalid balance')
+      }
+
+      return BigInt(data.result)
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+
+  throw new Error(`Unable to read ${source.shortName} USDC balance: ${lastError?.message ?? 'no RPC responded'}`)
+}
+
+export async function fetchSourceUsdcBalance(
+  owner: string,
+  sourceChain: string | number = DEFAULT_SOURCE_CHAIN_ID,
+): Promise<string> {
+  assertEvmAddress(owner, 'owner')
+  const source = getBridgeSourceChain(sourceChain)
+  const balance = await fetchSourceUsdcBalanceBase(owner, source)
+  return amountFromBaseUnits(balance)
 }
 
 export async function executeBridge(

@@ -14,6 +14,7 @@ import {
   SOURCE_CHAINS,
   executeBridge,
   fetchBridgeQuote,
+  fetchSourceUsdcBalance,
   getBridgeSourceChain,
   isValidBridgeAmount,
   MAX_BRIDGE_USDC,
@@ -201,6 +202,12 @@ interface BridgeModalProps {
   onStatus:      (msg: string) => void
 }
 
+type SourceBalanceState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; amount: string }
+  | { status: 'error' }
+
 function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSource = 'arbitrum', onClose, onStatus }: BridgeModalProps) {
   const [amount, setAmount]       = useState(initialAmount)
   const [sourceId, setSourceId]   = useState(() => getBridgeSourceChain(initialSource).id)
@@ -209,6 +216,7 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSou
   const [bridging, setBridging]   = useState(false)
   const [step, setStep]           = useState<string>('')
   const [error, setError]         = useState<string>('')
+  const [sourceBalance, setSourceBalance] = useState<SourceBalanceState>({ status: 'idle' })
 
   useEffect(() => {
     setAmount(initialAmount)
@@ -220,6 +228,21 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSou
 
   const source = getBridgeSourceChain(sourceId)
   const validAmount = isValidBridgeAmount(amount)
+
+  useEffect(() => {
+    let cancelled = false
+
+    setSourceBalance({ status: 'loading' })
+    fetchSourceUsdcBalance(senderEvm, source.id)
+      .then(balance => {
+        if (!cancelled) setSourceBalance({ status: 'ready', amount: balance })
+      })
+      .catch(() => {
+        if (!cancelled) setSourceBalance({ status: 'error' })
+      })
+
+    return () => { cancelled = true }
+  }, [senderEvm, source.id])
 
   async function handleQuote() {
     if (!validAmount) {
@@ -293,6 +316,15 @@ Mint tx:    ${result.mintTxHash}`)
             </select>
             <span className="bridge-token">USDC</span>
           </div>
+          <p className={`bridge-balance bridge-balance-${sourceBalance.status}`}>
+            {sourceBalance.status === 'ready'
+              ? `Balance: ${sourceBalance.amount} USDC on ${source.shortName}`
+              : sourceBalance.status === 'loading'
+                ? `Balance: checking ${source.shortName}...`
+                : sourceBalance.status === 'error'
+                  ? `Balance unavailable on ${source.shortName}`
+                  : '\u00a0'}
+          </p>
         </div>
 
         <div className="bridge-row">

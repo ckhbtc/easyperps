@@ -8,6 +8,7 @@ import {
   amountFromBaseUnits,
   amountToBaseUnits,
   fetchBridgeQuote,
+  fetchSourceUsdcBalance,
   getBridgeSourceChain,
   isValidBridgeAmount,
 } from '../src/bridge.js'
@@ -96,5 +97,34 @@ describe('CCTP bridge quote', () => {
     assert.equal(quote.sourceChain, 'Base')
     assert.equal(quote.dstAmount, '25')
     assert.match(quote.route, /Base to Injective/)
+  })
+
+  it('reads source-chain USDC balances through the selected chain RPC', async () => {
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body: string }> = []
+    globalThis.fetch = (async (url, init) => {
+      calls.push({ url: String(url), body: String(init?.body ?? '') })
+      return new Response(JSON.stringify({ result: '0xbc614e' }), { status: 200 })
+    }) as typeof fetch
+
+    try {
+      const balance = await fetchSourceUsdcBalance(
+        '0x1111111111111111111111111111111111111111',
+        'ethereum',
+      )
+
+      assert.equal(balance, '12.345678')
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].url, getBridgeSourceChain('ethereum').rpcUrls[0])
+      const body = JSON.parse(calls[0].body) as {
+        method: string
+        params: Array<{ to: string; data: string }>
+      }
+      assert.equal(body.method, 'eth_call')
+      assert.equal(body.params[0].to, getBridgeSourceChain('ethereum').usdc)
+      assert.match(body.params[0].data, /^0x70a082310{24}1111111111111111111111111111111111111111$/)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

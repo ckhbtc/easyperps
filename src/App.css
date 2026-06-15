@@ -2190,6 +2190,22 @@
 }
 [data-theme="rave"] .bridge-token { font-family: 'Fredoka One', cursive; font-size: 12px; font-weight: 400; }
 
+.bridge-balance {
+  min-height: 16px;
+  margin: -2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.bridge-balance-ready { color: var(--accent); }
+.bridge-balance-error { color: var(--red, #ff4d4d); }
+[data-theme="rave"] .bridge-balance {
+  font-family: 'Fredoka One', cursive;
+  font-size: 11px;
+  font-weight: 400;
+}
+
 /* Amount row */
 .bridge-amount-row {
   display: flex;
@@ -3429,6 +3445,22 @@
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
+}
+
+.dealer-mode .bridge-balance {
+  min-height: 20px;
+  color: #6a6254;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dealer-mode .bridge-balance-ready {
+  color: var(--blue);
+}
+
+.dealer-mode .bridge-balance-error {
+  color: var(--red);
 }
 
 .dealer-mode .bridge-input::placeholder {
