@@ -129,7 +129,7 @@ function BalancesCard({ data }: { data: BalanceInfo[] }) {
 }
 
 function PositionsCard({ data }: { data: PositionInfo[] }) {
-  if (data.length === 0) return <p className="card-empty">No open positions.</p>
+  if (data.length === 0) return null
   return (
     <table className="data-table">
       <thead>
@@ -832,8 +832,11 @@ export default function App() {
           setMessages(prev => {
             const copy = [...prev]
             const last = copy[copy.length - 1]
-            if (last.content === 'Fetching positions…')
-              copy[copy.length - 1] = agentMsg('Your open positions:', { type: 'positions', data })
+            if (last.content === 'Fetching positions…') {
+              copy[copy.length - 1] = data.length === 0
+                ? agentMsg('No open positions.')
+                : agentMsg('Your open positions:', { type: 'positions', data })
+            }
             return copy
           })
         } catch (e) { pushAgent(`Error fetching positions: ${(e as Error).message}`) }

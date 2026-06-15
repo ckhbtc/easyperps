@@ -15,3 +15,11 @@ describe('RFQ optimistic UI source contract', () => {
     assert.match(app, /type:\s*'tx',\s*txHash/)
   })
 })
+
+describe('positions empty-state source contract', () => {
+  it('answers empty positions with one plain agent message and no empty card', () => {
+    assert.match(app, /if \(data\.length === 0\) return null/)
+    assert.match(app, /data\.length === 0[\s\S]*agentMsg\('No open positions\.'\)/)
+    assert.match(app, /agentMsg\('Your open positions:', \{ type: 'positions', data \}\)/)
+  })
+})
