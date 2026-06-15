@@ -21,6 +21,7 @@ import {
 } from './vendor/rfq/injective_rfq_gw_rpc_pb.js'
 import {
   RFQ_CHAIN_ID,
+  RFQ_CID_PREFIX,
   RFQ_COLLECT_QUOTES_MS,
   RFQ_GATEWAY_URL,
   RFQ_MIN_QUOTE_TTL_MS,
@@ -148,6 +149,23 @@ const ACCOUNT_CACHE_TTL_MS = 5 * 60_000
 function randomId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
   return `rfq-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function randomHexId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (uuid) return uuid.replace(/-/g, '').slice(0, 24)
+
+  const bytes = new Uint8Array(12)
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes)
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 24).padEnd(24, '0')
+}
+
+export function buildEasyPerpsRfqCid(): string {
+  return `${RFQ_CID_PREFIX}-${randomHexId()}`
 }
 
 function canonicalDecimal(value: Decimal.Value): string {
@@ -290,7 +308,7 @@ export function buildRfqGatewayPrepareRequest({
   input,
   marketId,
   clientId = randomId(),
-  cid = randomId(),
+  cid = buildEasyPerpsRfqCid(),
   accountDetails = null,
   quotesWaitTimeMs = RFQ_COLLECT_QUOTES_MS,
 }: {

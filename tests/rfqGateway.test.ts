@@ -7,6 +7,8 @@ import {
   uint8ArrayToBase64,
 } from '@injectivelabs/sdk-ts'
 import {
+  buildEasyPerpsRfqCid,
+  buildRfqGatewayPrepareRequest,
   executeRfqGatewayAutoSign,
   getPreparedQuoteExpiryReport,
   getPreparedTxSignatureIndexes,
@@ -132,6 +134,33 @@ function makePreparedAutoSign(tx: Uint8Array): RfqPreparedAutoSign {
 }
 
 describe('RFQ gateway', () => {
+  it('tags EasyPerps RFQ requests with an attributable cid by default', () => {
+    const { privateKey } = PrivateKey.generate()
+    const session: AutoSignSession = {
+      privateKeyHex: privateKey.toPrivateKeyHex(),
+      granteeAddress: privateKey.toBech32(),
+      granterAddress: 'inj1granter',
+      expiration: 4_070_908_800,
+      evmChainId: 1776,
+      scopeVersion: 2,
+    }
+
+    const request = buildRfqGatewayPrepareRequest({
+      session,
+      marketId: '0xmarket',
+      accountDetails: null,
+      input: {
+        direction: 'short',
+        margin: '0',
+        quantity: '0.00038',
+        worstPrice: '60586',
+      },
+    })
+
+    assert.match(request.cid, /^easyperps-[0-9a-f]{24}$/)
+    assert.match(buildEasyPerpsRfqCid(), /^easyperps-[0-9a-f]{24}$/)
+  })
+
   it('finds prepared RFQ signers when gateway wraps pubkeys', () => {
     const { privateKey } = PrivateKey.generate()
     const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())

@@ -6,6 +6,7 @@ export const RFQ_COLLECT_QUOTES_MS = 500
 export const RFQ_PREPARE_MAX_ATTEMPTS = 3
 export const RFQ_PREPARE_RETRY_DELAY_MS = 75
 export const RFQ_MIN_QUOTE_TTL_MS = 2_500
+export const RFQ_CID_PREFIX = 'easyperps'
 
 export const RFQ_CONTRACT_AUTHZ_MSG_TYPES = [
   '/cosmos.bank.v1beta1.MsgSend',
