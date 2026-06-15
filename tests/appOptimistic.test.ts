@@ -35,4 +35,8 @@ describe('wallet disconnect source contract', () => {
     assert.match(app, /disconnectMetaMask/)
     assert.match(app, /await disconnectMetaMask\(\)/)
   })
+
+  it('does not print duplicate disconnect messages after permission revoke', () => {
+    assert.match(app, /prev\[prev\.length - 1\]\?\.content === 'Wallet disconnected\.'/)
+  })
 })

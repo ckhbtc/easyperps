@@ -630,7 +630,11 @@ export default function App() {
         setWallet(null)
         setAutoSign(false)
         setYolo(false)
-        setMessages(prev => [...prev, systemMsg('Wallet disconnected.')])
+        setMessages(prev => (
+          prev[prev.length - 1]?.content === 'Wallet disconnected.'
+            ? prev
+            : [...prev, systemMsg('Wallet disconnected.')]
+        ))
       } else {
         setWallet(w => w ? { ...w, injAddress: injAddr } : null)
         setAutoSign(isAutoSignActive(injAddr))
