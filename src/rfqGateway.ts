@@ -11,6 +11,8 @@ import {
 } from '@injectivelabs/sdk-ts'
 import { getNetworkEndpoints, Network } from '@injectivelabs/networks'
 import { Decimal } from 'decimal.js'
+import { MsgExec as AuthzMsgExecPb } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/authz/v1beta1/tx_pb.js'
+import { MsgExecuteContractCompat as WasmxMsgExecuteContractCompatPb } from '@injectivelabs/core-proto-ts-v2/generated/injective/wasmx/v1/tx_pb.js'
 import { InjectiveRfqGwRPCClient } from './vendor/rfq/injective_rfq_gw_rpc_pb.client.js'
 import {
   PrepareAutoSignRequest,
@@ -32,6 +34,7 @@ const NETWORK = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
 const authApi = new ChainRestAuthApi(endpoints.rest)
 const txApi = new TxGrpcApi(endpoints.grpc)
+const textDecoder = new TextDecoder()
 
 type TxRaw = ReturnType<typeof CosmosTxV1Beta1TxPb.TxRaw.create>
 
@@ -436,6 +439,108 @@ async function confirmRfqSettlement(
   }
 }
 
+function normalizeExpiryMs(value: unknown): number {
+  const expiry = Number(value || 0)
+  if (!Number.isFinite(expiry) || expiry <= 0) return 0
+  return expiry < 10_000_000_000 ? expiry * 1000 : expiry
+}
+
+function decodeExecuteContractCompatMsg(anyMessage: { typeUrl?: string; value?: Uint8Array }): unknown | null {
+  const typeUrl = String(anyMessage?.typeUrl || '')
+  if (!typeUrl.endsWith('injective.wasmx.v1.MsgExecuteContractCompat')) return null
+
+  const execute = WasmxMsgExecuteContractCompatPb.fromBinary(anyMessage.value || new Uint8Array())
+  if (!execute?.msg?.length) return null
+  return JSON.parse(typeof execute.msg === 'string' ? execute.msg : textDecoder.decode(execute.msg))
+}
+
+function extractAcceptQuoteMessagesFromAny(anyMessage: { typeUrl?: string; value?: Uint8Array }): unknown[] {
+  const typeUrl = String(anyMessage?.typeUrl || '')
+  if (typeUrl.endsWith('cosmos.authz.v1beta1.MsgExec')) {
+    const exec = AuthzMsgExecPb.fromBinary(anyMessage.value || new Uint8Array())
+    return (exec.msgs || []).flatMap(extractAcceptQuoteMessagesFromAny)
+  }
+
+  const msg = decodeExecuteContractCompatMsg(anyMessage)
+  if (msg && typeof msg === 'object' && 'accept_quote' in msg) {
+    return [(msg as { accept_quote: unknown }).accept_quote]
+  }
+  return []
+}
+
+export function extractPreparedAcceptQuoteMessages(txBytes: Uint8Array): unknown[] {
+  const txRaw = CosmosTxV1Beta1TxPb.TxRaw.fromBinary(txBytes)
+  const txBody = CosmosTxV1Beta1TxPb.TxBody.fromBinary(txRaw.bodyBytes)
+  return (txBody.messages || []).flatMap(extractAcceptQuoteMessagesFromAny)
+}
+
+export function getPreparedQuoteExpiryReport(
+  prepared: RfqPreparedAutoSign,
+  { nowMs = Date.now(), minTtlMs = RFQ_MIN_QUOTE_TTL_MS }: { nowMs?: number; minTtlMs?: number } = {},
+): {
+  ok: boolean
+  inspected: boolean
+  decodeError?: string
+  quoteCount: number
+  timestampQuoteCount: number
+  shortestTtlMs: number | null
+  minTtlMs: number
+} {
+  let acceptQuotes: unknown[] = []
+  try {
+    acceptQuotes = extractPreparedAcceptQuoteMessages(prepared.tx)
+  } catch (err) {
+    return {
+      ok: false,
+      inspected: false,
+      decodeError: err instanceof Error ? err.message : String(err),
+      quoteCount: 0,
+      timestampQuoteCount: 0,
+      shortestTtlMs: null,
+      minTtlMs,
+    }
+  }
+
+  const quotes = acceptQuotes.flatMap(message => (
+    message && typeof message === 'object' && Array.isArray((message as { quotes?: unknown[] }).quotes)
+      ? (message as { quotes: unknown[] }).quotes
+      : []
+  ))
+  const timestampTtls = quotes
+    .map(quote => quote && typeof quote === 'object'
+      ? normalizeExpiryMs((quote as { expiry?: { ts?: unknown; timestamp?: unknown } }).expiry?.ts ??
+          (quote as { expiry?: { ts?: unknown; timestamp?: unknown } }).expiry?.timestamp)
+      : 0)
+    .filter(expiryMs => expiryMs > 0)
+    .map(expiryMs => expiryMs - nowMs)
+  const shortestTtlMs = timestampTtls.length ? Math.min(...timestampTtls) : null
+  const unsafeQuoteCount = timestampTtls.filter(ttlMs => ttlMs < minTtlMs).length
+
+  return {
+    ok: unsafeQuoteCount === 0,
+    inspected: true,
+    quoteCount: quotes.length,
+    timestampQuoteCount: timestampTtls.length,
+    shortestTtlMs,
+    minTtlMs,
+  }
+}
+
+export function assertPreparedQuoteFreshness(
+  prepared: RfqPreparedAutoSign,
+  options?: { nowMs?: number; minTtlMs?: number },
+): ReturnType<typeof getPreparedQuoteExpiryReport> {
+  const report = getPreparedQuoteExpiryReport(prepared, options)
+  if (!report.inspected) {
+    throw new Error(`RFQ settlement tx could not be inspected for quote expiry: ${report.decodeError}`)
+  }
+  if (!report.ok) {
+    const ttl = Math.max(0, Math.round(report.shortestTtlMs ?? 0))
+    throw new Error(`RFQ quotes expire too soon (${ttl}ms left; need ${report.minTtlMs}ms). Try again.`)
+  }
+  return report
+}
+
 export function getPreparedTxSignatureIndexes(
   txRaw: TxRaw,
   {
@@ -570,13 +675,10 @@ export async function executeRfqGatewayAutoSign({
         throw new Error('No executable RFQ quote returned. RFQ gateway selected 0 quotes.')
       }
 
-      const shortestTtlMs = prepared.quotes.reduce<number | null>((shortest, quote) => {
-        const ttl = Number((quote as { ttlMs?: unknown }).ttlMs)
-        if (!Number.isFinite(ttl)) return shortest
-        return shortest === null ? ttl : Math.min(shortest, ttl)
-      }, null)
-      if (shortestTtlMs !== null && shortestTtlMs < minQuoteTtlMs) {
-        lastError = new Error(`RFQ quotes expire too soon (${Math.max(0, Math.round(shortestTtlMs))}ms left). Try again.`)
+      try {
+        assertPreparedQuoteFreshness(prepared, { minTtlMs: minQuoteTtlMs })
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
         prepared = null
         if (attempt < maxPrepareAttempts) await sleep(RFQ_PREPARE_RETRY_DELAY_MS)
         continue

@@ -8,11 +8,15 @@ import {
 } from '@injectivelabs/sdk-ts'
 import {
   executeRfqGatewayAutoSign,
+  getPreparedQuoteExpiryReport,
   getPreparedTxSignatureIndexes,
+  assertPreparedQuoteFreshness,
   signPreparedAutoSignTxRaw,
   type RfqPreparedAutoSign,
 } from '../src/rfqGateway.js'
 import type { AutoSignSession } from '../src/autosign.js'
+import { MsgExec as AuthzMsgExecPb } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/authz/v1beta1/tx_pb.js'
+import { MsgExecuteContractCompat as WasmxMsgExecuteContractCompatPb } from '@injectivelabs/core-proto-ts-v2/generated/injective/wasmx/v1/tx_pb.js'
 
 function wrappedPubKey(raw: Uint8Array): Uint8Array {
   return new Uint8Array([0x0a, raw.length, ...raw])
@@ -22,10 +26,12 @@ function makePreparedTxRaw({
   autosignPubKey,
   feePayerPubKey,
   autosignIndex,
+  messages = [],
 }: {
   autosignPubKey: Uint8Array
   feePayerPubKey: Uint8Array
   autosignIndex: number
+  messages?: Array<{ typeUrl: string; value: Uint8Array }>
 }) {
   const signerPubKeys = autosignIndex === 0
     ? [autosignPubKey, feePayerPubKey]
@@ -39,11 +45,66 @@ function makePreparedTxRaw({
       sequence: 0n,
     })),
   })
-  const body = CosmosTxV1Beta1TxPb.TxBody.create({ messages: [] })
+  const body = CosmosTxV1Beta1TxPb.TxBody.create({ messages })
   return CosmosTxV1Beta1TxPb.TxRaw.create({
     bodyBytes: CosmosTxV1Beta1TxPb.TxBody.toBinary(body),
     authInfoBytes: CosmosTxV1Beta1TxPb.AuthInfo.toBinary(authInfo),
     signatures: [],
+  })
+}
+
+function makePreparedAcceptQuoteTxRaw({
+  autosignPubKey,
+  feePayerPubKey,
+  autosignIndex,
+  quoteExpiries,
+}: {
+  autosignPubKey: Uint8Array
+  feePayerPubKey: Uint8Array
+  autosignIndex: number
+  quoteExpiries: number[]
+}) {
+  const acceptQuote = {
+    accept_quote: {
+      rfq_id: 42,
+      market_id: '0xmarket',
+      direction: 'short',
+      margin: '0',
+      quantity: '0.00038',
+      worst_price: '60586',
+      quotes: quoteExpiries.map((expiry, index) => ({
+        maker: `inj1maker${index}`,
+        price: '63755',
+        quantity: '0.00038',
+        margin: '0',
+        expiry: { ts: expiry },
+        signature: 'sig',
+        sign_mode: 'v2',
+      })),
+      cid: 'test-cid',
+    },
+  }
+  const executeCompat = WasmxMsgExecuteContractCompatPb.create({
+    sender: 'inj1granter',
+    contract: 'inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k',
+    msg: JSON.stringify(acceptQuote),
+    funds: '',
+  })
+  const exec = AuthzMsgExecPb.create({
+    grantee: 'inj1grantee',
+    msgs: [{
+      typeUrl: '/injective.wasmx.v1.MsgExecuteContractCompat',
+      value: WasmxMsgExecuteContractCompatPb.toBinary(executeCompat),
+    }],
+  })
+  return makePreparedTxRaw({
+    autosignPubKey,
+    feePayerPubKey,
+    autosignIndex,
+    messages: [{
+      typeUrl: '/cosmos.authz.v1beta1.MsgExec',
+      value: AuthzMsgExecPb.toBinary(exec),
+    }],
   })
 }
 
@@ -178,6 +239,33 @@ describe('RFQ gateway', () => {
     assert.equal(result.rfqId, 42)
     assert.equal(result.quotesAccepted, 1)
     assert.equal(result.status, 'confirmed')
+  })
+
+  it('inspects prepared settlements and rejects quotes that expire too soon', () => {
+    const { privateKey } = PrivateKey.generate()
+    const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())
+    const feePayerPubKey = new Uint8Array(33)
+    feePayerPubKey[0] = 2
+    feePayerPubKey[32] = 9
+    const nowMs = 1_781_264_968_000
+    const txRaw = makePreparedAcceptQuoteTxRaw({
+      autosignPubKey,
+      feePayerPubKey,
+      autosignIndex: 0,
+      quoteExpiries: [nowMs + 1_000, nowMs + 6_000],
+    })
+    const prepared = makePreparedAutoSign(CosmosTxV1Beta1TxPb.TxRaw.toBinary(txRaw))
+
+    const report = getPreparedQuoteExpiryReport(prepared, { nowMs, minTtlMs: 2_500 })
+    assert.equal(report.inspected, true)
+    assert.equal(report.quoteCount, 2)
+    assert.equal(report.timestampQuoteCount, 2)
+    assert.equal(report.ok, false)
+    assert.equal(report.shortestTtlMs, 1_000)
+    assert.throws(
+      () => assertPreparedQuoteFreshness(prepared, { nowMs, minTtlMs: 2_500 }),
+      /RFQ quotes expire too soon \(1000ms left; need 2500ms\)/,
+    )
   })
 
   it('emits matched progress before broadcast and returns pending confirmation', async () => {

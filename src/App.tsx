@@ -110,6 +110,15 @@ function isRfqStatusMessage(content: string): boolean {
   return RFQ_STATUS_PREFIXES.some(prefix => content.startsWith(prefix))
 }
 
+function summarizeRfqSettlementError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (/No quote was filled/i.test(message) && /quote expired/i.test(message)) {
+    return 'Order reverted: RFQ quotes expired before settlement. Please try again.'
+  }
+  const compact = message.replace(/\s+/g, ' ').slice(0, 260)
+  return compact ? `Order reverted: ${compact}` : 'Order reverted, please try again.'
+}
+
 const WELCOME = agentMsg(
   'MAINNET MADNESS!\n\nBest deals on Injective perps, quoted through RFQ and settled in native USDC.\n\nTry:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Base to Injective"'
 )
@@ -675,8 +684,9 @@ export default function App() {
 
     void result.confirmation
       ?.then(confirmed => publishTx(confirmed.txHash || result.txHash))
-      .catch(() => {
-        pushAgent('Order reverted, please try again.')
+      .catch(err => {
+        console.error('RFQ settlement failed after broadcast', err)
+        pushAgent(summarizeRfqSettlementError(err))
       })
   }
 

@@ -14,6 +14,12 @@ describe('RFQ optimistic UI source contract', () => {
     assert.match(app, /confirmation\s*\?\.\s*then/)
     assert.match(app, /type:\s*'tx',\s*txHash/)
   })
+
+  it('does not collapse post-broadcast settlement errors to a blank generic message', () => {
+    assert.match(app, /summarizeRfqSettlementError/)
+    assert.match(app, /RFQ quotes expired before settlement/)
+    assert.match(app, /console\.error\('RFQ settlement failed after broadcast'/)
+  })
 })
 
 describe('positions empty-state source contract', () => {
