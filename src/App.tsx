@@ -217,6 +217,8 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSou
   const [step, setStep]           = useState<string>('')
   const [error, setError]         = useState<string>('')
   const [sourceBalance, setSourceBalance] = useState<SourceBalanceState>({ status: 'idle' })
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false)
+  const sourcePickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setAmount(initialAmount)
@@ -224,6 +226,7 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSou
     setQuote(null)
     setStep('')
     setError('')
+    setSourceMenuOpen(false)
   }, [initialAmount, initialSource])
 
   const source = getBridgeSourceChain(sourceId)
@@ -243,6 +246,35 @@ function BridgeModal({ senderEvm, recipientEvm, initialAmount = '10', initialSou
 
     return () => { cancelled = true }
   }, [senderEvm, source.id])
+
+  useEffect(() => {
+    if (!sourceMenuOpen) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!sourcePickerRef.current?.contains(event.target as Node)) {
+        setSourceMenuOpen(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setSourceMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [sourceMenuOpen])
+
+  function selectSource(nextSourceId: number) {
+    setSourceId(nextSourceId)
+    setQuote(null)
+    setStep('')
+    setError('')
+    setSourceMenuOpen(false)
+  }
 
   async function handleQuote() {
     if (!validAmount) {
@@ -298,22 +330,37 @@ Mint tx:    ${result.mintTxHash}`)
 
         <div className="bridge-row">
           <label className="bridge-label">From</label>
-          <div className="bridge-chain-row">
-            <select
-              className="bridge-chain bridge-chain-select"
-              value={sourceId}
-              disabled={quoting || bridging}
-              onChange={e => {
-                setSourceId(Number(e.target.value))
-                setQuote(null)
-                setStep('')
-                setError('')
-              }}
-            >
-              {SOURCE_CHAINS.map(chain => (
-                <option key={chain.id} value={chain.id}>{chain.shortName}</option>
-              ))}
-            </select>
+          <div className="bridge-chain-row bridge-chain-row-source">
+            <div className="bridge-source-picker" ref={sourcePickerRef}>
+              <button
+                type="button"
+                className="bridge-chain bridge-source-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={sourceMenuOpen}
+                disabled={quoting || bridging}
+                onClick={() => setSourceMenuOpen(open => !open)}
+              >
+                <span>{source.shortName}</span>
+                <span className="bridge-source-caret" aria-hidden="true">▾</span>
+              </button>
+              {sourceMenuOpen && (
+                <div className="bridge-source-menu" role="listbox" aria-label="Bridge source chain">
+                  {SOURCE_CHAINS.map(chain => (
+                    <button
+                      key={chain.id}
+                      type="button"
+                      className={chain.id === sourceId ? 'bridge-source-option selected' : 'bridge-source-option'}
+                      role="option"
+                      aria-selected={chain.id === sourceId}
+                      onClick={() => selectSource(chain.id)}
+                    >
+                      <span>{chain.shortName}</span>
+                      {chain.id === sourceId && <span aria-hidden="true">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <span className="bridge-token">USDC</span>
           </div>
           <p className={`bridge-balance bridge-balance-${sourceBalance.status}`}>
