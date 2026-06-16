@@ -122,6 +122,7 @@ export interface PositionInfo {
   marketId: string
   side: 'long' | 'short'
   quantity: string
+  rawQuantity: string
   entryPrice: string
   markPrice: string
   margin: string
@@ -138,6 +139,16 @@ export interface BalanceInfo {
 interface PortfolioBalanceLike {
   bankBalancesList?: Array<{ denom?: string; amount?: string }>
   subaccountsList?: Array<{ denom?: string; deposit?: { availableBalance?: string } }>
+}
+
+interface PositionLike {
+  marketId: string
+  ticker?: string
+  direction?: string
+  quantity: string
+  entryPrice: string
+  markPrice?: string
+  margin: string
 }
 
 // ─── Markets cache ────────────────────────────────────────────────────────────
@@ -256,6 +267,39 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
 
 // ─── Positions ────────────────────────────────────────────────────────────────
 
+export function formatPositionInfo(
+  p: PositionLike,
+  market?: PerpMarket,
+): PositionInfo {
+  const side = p.direction === 'long' ? 'long' : 'short'
+
+  // Indexer returns prices in chain units for derivative markets, scaled by
+  // the quote token decimals.
+  const SCALE = new Decimal(10).pow(QUOTE_DECIMALS)
+  const entryPrice = new Decimal(p.entryPrice).div(SCALE)
+  const markPrice = new Decimal(p.markPrice ?? p.entryPrice).div(SCALE)
+  const quantity = new Decimal(p.quantity)
+  const margin = new Decimal(p.margin).div(SCALE)
+
+  const dir = side === 'long' ? 1 : -1
+  const pnl = markPrice.minus(entryPrice).mul(quantity).mul(dir)
+  const pnlPct = margin.gt(0) ? pnl.div(margin).mul(100) : new Decimal(0)
+
+  return {
+    symbol: market?.symbol ?? p.marketId.slice(0, 6),
+    ticker: market?.ticker ?? p.ticker ?? p.marketId,
+    marketId: p.marketId,
+    side,
+    quantity: quantity.toFixed(4),
+    rawQuantity: quantity.toFixed(),
+    entryPrice: entryPrice.toFixed(4),
+    markPrice: markPrice.toFixed(4),
+    margin: margin.toFixed(4),
+    pnl: pnl.toFixed(4),
+    pnlPct: pnlPct.toFixed(2),
+  }
+}
+
 export async function getPositions(injAddress: string): Promise<PositionInfo[]> {
   const markets = await listMarkets()
   const marketMap = new Map(markets.map(m => [m.marketId, m]))
@@ -266,33 +310,7 @@ export async function getPositions(injAddress: string): Promise<PositionInfo[]> 
   const result: PositionInfo[] = []
   for (const p of positions ?? []) {
     const market = marketMap.get(p.marketId)
-    // p.direction is TradeDirection ('long' | 'short')
-    const side = p.direction === 'long' ? 'long' : 'short'
-
-    // Indexer returns prices in chain units for derivative markets, scaled by
-    // the quote token decimals.
-    const SCALE = new Decimal(10).pow(QUOTE_DECIMALS)
-    const entryPrice = new Decimal(p.entryPrice).div(SCALE)
-    const markPrice = new Decimal(p.markPrice ?? p.entryPrice).div(SCALE)
-    const quantity = new Decimal(p.quantity)
-    const margin = new Decimal(p.margin).div(SCALE)
-
-    const dir = side === 'long' ? 1 : -1
-    const pnl = markPrice.minus(entryPrice).mul(quantity).mul(dir)
-    const pnlPct = margin.gt(0) ? pnl.div(margin).mul(100) : new Decimal(0)
-
-    result.push({
-      symbol: market?.symbol ?? p.marketId.slice(0, 6),
-      ticker: market?.ticker ?? p.ticker ?? p.marketId,
-      marketId: p.marketId,
-      side,
-      quantity: quantity.toFixed(4),
-      entryPrice: entryPrice.toFixed(4),
-      markPrice: markPrice.toFixed(4),
-      margin: margin.toFixed(4),
-      pnl: pnl.toFixed(4),
-      pnlPct: pnlPct.toFixed(2),
-    })
+    result.push(formatPositionInfo(p, market))
   }
   return result
 }

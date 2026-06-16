@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   collectNativeUsdcBalances,
+  formatPositionInfo,
   isUsdcPerpMarket,
   NATIVE_USDC_DENOM,
   resolveDenom,
@@ -40,5 +41,35 @@ describe('Injective native USDC helpers', () => {
     assert.deepEqual(balances, [
       { symbol: 'USDC', amount: '15.0000', denom: NATIVE_USDC_DENOM },
     ])
+  })
+})
+
+describe('Injective positions', () => {
+  it('keeps exact raw quantity for BTC closes while allowing rounded display', () => {
+    const position = formatPositionInfo({
+      marketId: '0xbtc',
+      ticker: 'BTC/USDC PERP',
+      direction: 'long',
+      quantity: '0.00038',
+      entryPrice: '65000000000',
+      markPrice: '66000000000',
+      margin: '25000000',
+    }, {
+      symbol: 'BTC',
+      ticker: 'BTC/USDC PERP',
+      marketId: '0xbtc',
+      quoteDenom: NATIVE_USDC_DENOM,
+      minPriceTickSize: '1000',
+      minQuantityTickSize: '0.00001',
+      initialMarginRatio: '0.05',
+      maintenanceMarginRatio: '0.02',
+      takerFeeRate: '0.001',
+      oracleBase: 'BTC',
+      oracleQuote: 'USDC',
+      oracleType: 'pyth',
+    })
+
+    assert.equal(position.quantity, '0.0004')
+    assert.equal(position.rawQuantity, '0.00038')
   })
 })

@@ -1002,7 +1002,7 @@ export default function App() {
         const last = copy[copy.length - 1]
         if (last && isRfqStatusMessage(last.content))
           copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
-            ? 'Order reverted, please try again.'
+            ? summarizeRfqSettlementError(e)
             : `Trade failed: ${(e as Error).message}`)
         return copy
       })
@@ -1087,7 +1087,7 @@ export default function App() {
         ethAddress: wallet.ethAddress,
         market,
         side: pos.side,
-        quantity: pos.quantity,
+        quantity: pos.rawQuantity,
         onProgress: (message, event) => {
           if (event?.phase === 'matched') {
             matched = true
@@ -1114,7 +1114,7 @@ export default function App() {
         const last = copy[copy.length - 1]
         if (last && isRfqStatusMessage(last.content))
           copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
-            ? 'Order reverted, please try again.'
+            ? summarizeRfqSettlementError(e)
             : `Close failed: ${(e as Error).message}`)
         return copy
       })

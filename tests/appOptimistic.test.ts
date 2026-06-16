@@ -19,6 +19,7 @@ describe('RFQ optimistic UI source contract', () => {
     assert.match(app, /summarizeRfqSettlementError/)
     assert.match(app, /RFQ quotes expired before settlement/)
     assert.match(app, /console\.error\('RFQ settlement failed after broadcast'/)
+    assert.match(app, /last\.content\.startsWith\('RFQ matched'\)\s*\?\s*summarizeRfqSettlementError\(e\)/)
   })
 })
 
@@ -38,5 +39,11 @@ describe('wallet disconnect source contract', () => {
 
   it('does not print duplicate disconnect messages after permission revoke', () => {
     assert.match(app, /prev\[prev\.length - 1\]\?\.content === 'Wallet disconnected\.'/)
+  })
+})
+
+describe('RFQ close source contract', () => {
+  it('uses raw position size instead of rounded display size when closing', () => {
+    assert.match(app, /quantity:\s*pos\.rawQuantity/)
   })
 })
