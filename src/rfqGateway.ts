@@ -186,6 +186,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function isRetryablePrepareError(err: Error): boolean {
+  return /no quotes received within wait time/i.test(err.message) ||
+    /No executable RFQ quote returned/i.test(err.message) ||
+    /RFQ quotes expire too soon/i.test(err.message)
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   if (typeof btoa === 'function') {
     let binary = ''
@@ -670,12 +676,6 @@ export async function executeRfqGatewayAutoSign({
     const resolvedAccountDetails = accountDetails === undefined
       ? await getRfqAccountDetailsForPrepare(autosignAddress)
       : accountDetails
-    const request = buildRfqGatewayPrepareRequest({
-      session,
-      input,
-      marketId,
-      accountDetails: resolvedAccountDetails,
-    })
 
     let prepared: RfqPreparedAutoSign | null = null
     let lastError: Error | null = null
@@ -685,28 +685,43 @@ export async function executeRfqGatewayAutoSign({
         attempt === 1 ? 'Matching RFQ quote...' : 'Refreshing RFQ quote...',
         { phase: 'matching', attempt },
       )
-      prepared = await gatewayApi.fetchPrepareAutoSign(request)
-      if (!prepared?.tx?.length) {
-        throw new Error('RFQ gateway did not return a prepared settlement transaction')
-      }
-      if (!prepared.quotes?.length) {
-        throw new Error('No executable RFQ quote returned. RFQ gateway selected 0 quotes.')
-      }
-
       try {
+        const request = buildRfqGatewayPrepareRequest({
+          session,
+          input,
+          marketId,
+          accountDetails: resolvedAccountDetails,
+        })
+        prepared = await gatewayApi.fetchPrepareAutoSign(request)
+        if (!prepared?.tx?.length) {
+          throw new Error('RFQ gateway did not return a prepared settlement transaction')
+        }
+        if (!prepared.quotes?.length) {
+          throw new Error('No executable RFQ quote returned. RFQ gateway selected 0 quotes.')
+        }
         assertPreparedQuoteFreshness(prepared, { minTtlMs: minQuoteTtlMs })
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err))
         prepared = null
-        if (attempt < maxPrepareAttempts) await sleep(RFQ_PREPARE_RETRY_DELAY_MS)
-        continue
+        if (attempt < maxPrepareAttempts && isRetryablePrepareError(lastError)) {
+          await sleep(RFQ_PREPARE_RETRY_DELAY_MS)
+          continue
+        }
+        throw lastError
       }
 
-      lastError = null
-      break
+      if (prepared) {
+        lastError = null
+        break
+      }
     }
 
-    if (!prepared) throw lastError || new Error('RFQ gateway did not return a fresh settlement transaction')
+    if (!prepared) {
+      if (lastError) {
+        throw lastError
+      }
+      throw new Error('RFQ gateway did not return a fresh settlement transaction')
+    }
 
     const matchedResult: RfqGatewayMatchedResult = {
       rfqId: prepared.rfqId,

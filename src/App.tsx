@@ -119,6 +119,18 @@ function summarizeRfqSettlementError(err: unknown): string {
   return compact ? `Order reverted: ${compact}` : 'Order reverted, please try again.'
 }
 
+function summarizeRfqPrepareError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (/no quotes received within wait time/i.test(message) || /No executable RFQ quote returned/i.test(message)) {
+    return 'No RFQ quote landed in time. Try again, or use a smaller size or another market.'
+  }
+  if (/duplicate (request|client id|key)/i.test(message)) {
+    return 'Duplicate RFQ request blocked. Wait for the current quote to finish, then try again.'
+  }
+  const compact = message.replace(/\s+/g, ' ').slice(0, 180)
+  return compact || 'Please try again.'
+}
+
 const WELCOME = agentMsg(
   'MAINNET MADNESS!\n\nBest deals on Injective perps, quoted through RFQ and settled in native USDC.\n\nTry:\n• "long $50 INJ at 5x"\n• "2x short $10 of ETH"\n• "close my BTC position"\n• "show balances"\n• "price of INJ"\n• "bridge $10 from Base to Injective"'
 )
@@ -604,6 +616,8 @@ export default function App() {
   const [pendingClarification, setPendingClarification] = useState<PendingIntent | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const loadingRef = useRef(false)
+  const rfqBusyRef = useRef(false)
 
   function focusComposer() {
     window.requestAnimationFrame(() => {
@@ -658,6 +672,26 @@ export default function App() {
       return copy
     })
   }, [])
+
+  async function runRfqAction(action: () => Promise<void>) {
+    if (rfqBusyRef.current) return
+    rfqBusyRef.current = true
+    const ownsLoading = !loadingRef.current
+    if (ownsLoading) {
+      loadingRef.current = true
+      setLoading(true)
+    }
+    try {
+      await action()
+    } finally {
+      rfqBusyRef.current = false
+      if (ownsLoading) {
+        loadingRef.current = false
+        setLoading(false)
+        focusComposer()
+      }
+    }
+  }
 
   function formatMatchedMessage(label: string, event?: RfqGatewayProgressEvent): string {
     const result = event?.phase === 'matched' ? event.result : null
@@ -780,7 +814,8 @@ export default function App() {
 
   async function handleSend() {
     const text = input.trim()
-    if (!text || loading) return
+    if (!text || loadingRef.current) return
+    loadingRef.current = true
     setInput('')
     setMessages(prev => [...prev, userMsg(text)])
     focusComposer()
@@ -788,6 +823,7 @@ export default function App() {
     try {
       await processMessage(text)
     } finally {
+      loadingRef.current = false
       setLoading(false)
       focusComposer()
     }
@@ -959,54 +995,57 @@ export default function App() {
   }
 
   async function executeTrade(trade: PendingTrade) {
-    if (!wallet) return
-    setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
-    const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before trading.')
-    if (!ready) return
+    await runRfqAction(async () => {
+      if (!wallet) return
+      setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
+      const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before trading.')
+      if (!ready) return
 
-    pushAgent(`Requesting RFQ quotes for ${trade.side} ${trade.symbol}...`)
-    try {
-      const market = await resolveMarket(trade.symbol)
-      let matched = false
-      const matchedLabel = `${trade.side.toUpperCase()} ${trade.symbol}`
-      const result = await openTrade({
-        injAddress: wallet.injAddress,
-        ethAddress: wallet.ethAddress,
-        market,
-        side: trade.side,
-        notionalUsdc: Number(trade.amount),
-        leverage: Number(trade.leverage),
-        onProgress: (message, event) => {
-          if (event?.phase === 'matched') {
-            matched = true
-            replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
-            return
-          }
-          if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
-            return
-          }
-          replaceRfqStatus(message)
-        },
-      })
-      if (!matched) {
-        replaceRfqStatus(formatMatchedMessage(matchedLabel))
+      pushAgent(`Requesting RFQ quotes for ${trade.side} ${trade.symbol}...`)
+      try {
+        const market = await resolveMarket(trade.symbol)
+        let matched = false
+        const matchedLabel = `${trade.side.toUpperCase()} ${trade.symbol}`
+        const result = await openTrade({
+          injAddress: wallet.injAddress,
+          ethAddress: wallet.ethAddress,
+          market,
+          side: trade.side,
+          notionalUsdc: Number(trade.amount),
+          leverage: Number(trade.leverage),
+          onProgress: (message, event) => {
+            if (event?.phase === 'matched') {
+              matched = true
+              replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
+              return
+            }
+            if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
+              return
+            }
+            replaceRfqStatus(message)
+          },
+        })
+        if (!matched) {
+          replaceRfqStatus(formatMatchedMessage(matchedLabel))
+        }
+        handleMatchedSettlement({
+          result,
+          content: `${trade.side.toUpperCase()} RFQ settlement confirmed.`,
+          label: `RFQ ${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
+        })
+      } catch (e) {
+        console.warn('RFQ trade failed', e)
+        setMessages(prev => {
+          const copy = [...prev]
+          const last = copy[copy.length - 1]
+          if (last && isRfqStatusMessage(last.content))
+            copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
+              ? summarizeRfqSettlementError(e)
+              : `Trade failed: ${summarizeRfqPrepareError(e)}`)
+          return copy
+        })
       }
-      handleMatchedSettlement({
-        result,
-        content: `${trade.side.toUpperCase()} RFQ settlement confirmed.`,
-        label: `RFQ ${trade.side} ${trade.symbol} $${trade.amount} @ ${trade.leverage}x`,
-      })
-    } catch (e) {
-      setMessages(prev => {
-        const copy = [...prev]
-        const last = copy[copy.length - 1]
-        if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
-            ? summarizeRfqSettlementError(e)
-            : `Trade failed: ${(e as Error).message}`)
-        return copy
-      })
-    }
+    })
   }
 
   // ─── Trade close ──────────────────────────────────────────────────────────
@@ -1072,53 +1111,56 @@ export default function App() {
   }
 
   async function executeClose(pos: PositionInfo) {
-    if (!wallet) return
-    setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
-    const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before closing positions.')
-    if (!ready) return
+    await runRfqAction(async () => {
+      if (!wallet) return
+      setMessages(prev => prev.filter(m => m.card?.type !== 'confirm'))
+      const ready = await ensureRfqAutoSign('RFQ AutoSign authorization is required before closing positions.')
+      if (!ready) return
 
-    pushAgent(`Requesting RFQ close quote for ${pos.symbol}...`)
-    try {
-      const market = await resolveMarket(pos.symbol)
-      let matched = false
-      const matchedLabel = `Close ${pos.symbol}`
-      const result = await closeTrade({
-        injAddress: wallet.injAddress,
-        ethAddress: wallet.ethAddress,
-        market,
-        side: pos.side,
-        quantity: pos.rawQuantity,
-        onProgress: (message, event) => {
-          if (event?.phase === 'matched') {
-            matched = true
-            replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
-            return
-          }
-          if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
-            return
-          }
-          replaceRfqStatus(message)
-        },
-      })
-      if (!matched) {
-        replaceRfqStatus(formatMatchedMessage(matchedLabel))
+      pushAgent(`Requesting RFQ close quote for ${pos.symbol}...`)
+      try {
+        const market = await resolveMarket(pos.symbol)
+        let matched = false
+        const matchedLabel = `Close ${pos.symbol}`
+        const result = await closeTrade({
+          injAddress: wallet.injAddress,
+          ethAddress: wallet.ethAddress,
+          market,
+          side: pos.side,
+          quantity: pos.rawQuantity,
+          onProgress: (message, event) => {
+            if (event?.phase === 'matched') {
+              matched = true
+              replaceRfqStatus(formatMatchedMessage(matchedLabel, event))
+              return
+            }
+            if (matched && (event?.phase === 'signing' || event?.phase === 'broadcasting' || event?.phase === 'broadcasted')) {
+              return
+            }
+            replaceRfqStatus(message)
+          },
+        })
+        if (!matched) {
+          replaceRfqStatus(formatMatchedMessage(matchedLabel))
+        }
+        handleMatchedSettlement({
+          result,
+          content: 'RFQ close settlement confirmed.',
+          label: `RFQ close ${pos.symbol} ${pos.side}`,
+        })
+      } catch (e) {
+        console.warn('RFQ close failed', e)
+        setMessages(prev => {
+          const copy = [...prev]
+          const last = copy[copy.length - 1]
+          if (last && isRfqStatusMessage(last.content))
+            copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
+              ? summarizeRfqSettlementError(e)
+              : `Close failed: ${summarizeRfqPrepareError(e)}`)
+          return copy
+        })
       }
-      handleMatchedSettlement({
-        result,
-        content: 'RFQ close settlement confirmed.',
-        label: `RFQ close ${pos.symbol} ${pos.side}`,
-      })
-    } catch (e) {
-      setMessages(prev => {
-        const copy = [...prev]
-        const last = copy[copy.length - 1]
-        if (last && isRfqStatusMessage(last.content))
-          copy[copy.length - 1] = agentMsg(last.content.startsWith('RFQ matched')
-            ? summarizeRfqSettlementError(e)
-            : `Close failed: ${(e as Error).message}`)
-        return copy
-      })
-    }
+    })
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────

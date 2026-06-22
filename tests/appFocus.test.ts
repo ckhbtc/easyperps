@@ -40,6 +40,6 @@ describe('chat composer focus behavior', () => {
     const handleSendBlock = app.slice(sendStart, processStart)
 
     assert.match(handleSendBlock, /setMessages\(prev => \[\.\.\.prev, userMsg\(text\)\]\)\s+focusComposer\(\)\s+setLoading\(true\)/)
-    assert.match(handleSendBlock, /finally \{\s+setLoading\(false\)\s+focusComposer\(\)\s+\}/)
+    assert.match(handleSendBlock, /finally \{\s+loadingRef\.current = false\s+setLoading\(false\)\s+focusComposer\(\)\s+\}/)
   })
 })

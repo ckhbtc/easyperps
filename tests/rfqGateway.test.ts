@@ -367,4 +367,73 @@ describe('RFQ gateway', () => {
     resolveConfirmation({ txHash: 'ABC', code: 0 })
     assert.equal((await result.confirmation).txHash, 'ABC')
   })
+
+  it('uses a fresh RFQ client id and cid when retrying stale prepared quotes', async () => {
+    const { privateKey } = PrivateKey.generate()
+    const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())
+    const feePayerPubKey = new Uint8Array(33)
+    feePayerPubKey[0] = 2
+    feePayerPubKey[32] = 9
+    const staleTxRaw = makePreparedAcceptQuoteTxRaw({
+      autosignPubKey,
+      feePayerPubKey,
+      autosignIndex: 0,
+      quoteExpiries: [Date.now() + 1_000],
+    })
+    const freshTxRaw = makePreparedAcceptQuoteTxRaw({
+      autosignPubKey,
+      feePayerPubKey,
+      autosignIndex: 0,
+      quoteExpiries: [Date.now() + 60_000],
+    })
+    const stalePrepared = makePreparedAutoSign(CosmosTxV1Beta1TxPb.TxRaw.toBinary(staleTxRaw))
+    stalePrepared.feePayerPubKey = { key: uint8ArrayToBase64(feePayerPubKey), type: 'secp256k1' }
+    const freshPrepared = makePreparedAutoSign(CosmosTxV1Beta1TxPb.TxRaw.toBinary(freshTxRaw))
+    freshPrepared.feePayerPubKey = { key: uint8ArrayToBase64(feePayerPubKey), type: 'secp256k1' }
+    const session: AutoSignSession = {
+      privateKeyHex: privateKey.toPrivateKeyHex(),
+      granteeAddress: privateKey.toBech32(),
+      granterAddress: 'inj1granter',
+      expiration: 4_070_908_800,
+      evmChainId: 1776,
+      scopeVersion: 2,
+    }
+    const clientIds: string[] = []
+    const cids: string[] = []
+
+    const result = await executeRfqGatewayAutoSign({
+      session,
+      marketId: '0xmarket',
+      accountDetails: null,
+      input: {
+        direction: 'long',
+        margin: '5',
+        quantity: '1',
+        worstPrice: '11',
+      },
+      minQuoteTtlMs: 2_500,
+      maxPrepareAttempts: 2,
+      gatewayApi: {
+        async fetchPrepareAutoSign(request) {
+          clientIds.push(request.clientId)
+          cids.push(request.cid)
+          return clientIds.length === 1 ? stalePrepared : freshPrepared
+        },
+      },
+      txApiClient: {
+        async broadcast() {
+          return { txHash: 'ABC', code: 0 }
+        },
+        async fetchTxPoll(txHash) {
+          return { txHash, code: 0 }
+        },
+      },
+    })
+
+    assert.equal(result.txHash, 'ABC')
+    assert.equal(clientIds.length, 2)
+    assert.notEqual(clientIds[0], clientIds[1])
+    assert.equal(cids.length, 2)
+    assert.notEqual(cids[0], cids[1])
+  })
 })

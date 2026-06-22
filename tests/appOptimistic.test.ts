@@ -47,3 +47,12 @@ describe('RFQ close source contract', () => {
     assert.match(app, /quantity:\s*pos\.rawQuantity/)
   })
 })
+
+describe('RFQ in-flight guards', () => {
+  it('uses synchronous refs to block duplicate sends and RFQ actions', () => {
+    assert.match(app, /const loadingRef = useRef\(false\)/)
+    assert.match(app, /if \(!text \|\| loadingRef\.current\) return/)
+    assert.match(app, /const rfqBusyRef = useRef\(false\)/)
+    assert.match(app, /async function runRfqAction/)
+  })
+})
